@@ -43,7 +43,7 @@ export const BUILD_STEPS: SimulationStep[] = [
     at: 60,
     agent: "AcidEngine",
     level: "muted",
-    message: "AcidMade Engine v0.9.2.stable · scene runtime 0.9.2 · target desktop",
+    message: "AcidMade Engine v1.0.1.stable · scene runtime 1.0.1 · target desktop",
     progress: 1,
   },
   {
