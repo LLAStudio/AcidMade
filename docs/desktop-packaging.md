@@ -76,8 +76,23 @@ window from `dist/`.
 
 ## Release
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds every
-format on its native runner and publishes a GitHub release with the artifacts:
+`.github/workflows/release.yml` runs on every push to `main` (and on a `v*` tag
+or a manual dispatch). The `prepare` job creates the tag `v<package.json version>`
+and a **draft** release before anything is built, so a broken platform can no
+longer stop the release from existing:
+
+1. `prepare` — tag + draft release with generated notes.
+2. `linux`, `windows`, `macos` — build in parallel, uploading whatever they
+   produced even when an optional format (Flatpak, MSI) fails.
+3. `publish` — runs with `if: always()`, attaches every collected artifact to the
+   draft, and un-drafts the release **only when all three platforms succeeded**.
+
+If a platform fails, the release stays a draft with the artifacts from the
+successful platforms, and the run summary lists each platform's result. Publish
+it manually from the Releases page once the failure is fixed, or re-run the
+failed jobs and let the next run attach the rest.
+
+Local tagging is still possible:
 
 ```bash
 git tag v1.0.2
