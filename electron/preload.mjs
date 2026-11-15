@@ -1,4 +1,4 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
 const runtimePort = Number(process.env.ACIDMADE_RUNTIME_PORT ?? 4317);
 
@@ -9,5 +9,16 @@ contextBridge.exposeInMainWorld("acidmade", {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,
+  },
+  projects: {
+    list: () => ipcRenderer.invoke("acidmade:projects:list"),
+    create: (input) => ipcRenderer.invoke("acidmade:projects:create", input),
+    openDialog: () => ipcRenderer.invoke("acidmade:projects:open-dialog"),
+    reveal: (projectPath) => ipcRenderer.invoke("acidmade:projects:reveal", projectPath),
+    tree: (projectPath) => ipcRenderer.invoke("acidmade:projects:tree", projectPath),
+    readFile: (projectPath, relative) =>
+      ipcRenderer.invoke("acidmade:projects:read-file", { projectPath, relative }),
+    writeFile: (projectPath, relative, content) =>
+      ipcRenderer.invoke("acidmade:projects:write-file", { projectPath, relative, content }),
   },
 });

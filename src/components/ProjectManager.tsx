@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Boxes,
   ChevronRight,
@@ -6,53 +6,140 @@ import {
   FileJson,
   Folder,
   FolderOpen,
+  FolderSearch,
   GitBranch,
+  HardDrive,
   Layers,
   Plus,
+  RefreshCw,
   Rocket,
+  Save,
   Search,
   Sparkles,
+  SquareArrowOutUpRight,
   TerminalSquare,
   X,
 } from "lucide-react";
 import { useEngine } from "../state/EngineContext";
 import { CODE_FILES } from "../data/resources";
 import { PROJECT_TEMPLATES, type Project } from "../data/projects";
-import { cx, uid } from "../lib/utils";
-import type { CodeFile } from "../types";
+import {
+  isDiskBacked,
+  listProjects,
+  openProjectFolder,
+  projectFiles,
+  readProjectFile,
+  revealProject,
+  writeProjectFile,
+  type ProjectFileContent,
+  type ProjectFileInfo,
+} from "../lib/projects";
+import { cx } from "../lib/utils";
 
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "untitled-project"
-  );
-}
-
-function FileGlyph({ file }: { file: CodeFile }) {
-  if (file.language === "json") return <FileJson size={11} className="text-[#38BDF8]/75" />;
-  if (file.language === "prompt") return <Sparkles size={11} className="text-acid/70" />;
+function FileGlyph({ language }: { language: string }) {
+  if (language === "json") return <FileJson size={11} className="text-[#38BDF8]/75" />;
+  if (language === "prompt") return <Sparkles size={11} className="text-acid/70" />;
   return <FileCode2 size={11} className="text-[#A3E635]/70" />;
 }
 
-export function ProjectManager() {
-  const { projects, project, launchProject, createProject, openFile } = useEngine();
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
 
+export function ProjectManager() {
+  const {
+    projects,
+    project,
+    launchProject,
+    createProject,
+    openFile,
+    refreshProjects,
+    pushLog,
+  } = useEngine();
+
+  const disk = isDiskBacked();
+
+  const [root, setRoot] = useState("");
   const [query, setQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [selectedId, setSelectedId] = useState(project.id);
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
-    scenes: true,
-    agents: true,
-    api: true,
-  });
+  const [files, setFiles] = useState<ProjectFileInfo[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+  const [activePath, setActivePath] = useState<string | null>(null);
+  const [fileData, setFileData] = useState<ProjectFileContent | null>(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftTemplate, setDraftTemplate] = useState(PROJECT_TEMPLATES[0].id);
+  const [busy, setBusy] = useState(false);
+  const noteTimer = useRef<number | null>(null);
 
-  const selected = projects.find((entry) => entry.id === selectedId) ?? projects[0];
+  const selected = projects.find((entry) => entry.id === selectedId) ?? projects[0] ?? project;
+
+  const flash = useCallback((message: string) => {
+    setNote(message);
+    if (noteTimer.current) window.clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => setNote(null), 4000);
+  }, []);
+
+  useEffect(() => {
+    void listProjects()
+      .then((result) => {
+        if (result.diskBacked) setRoot(result.root);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!projects.some((entry) => entry.id === selectedId) && projects[0]) {
+      setSelectedId(projects[0].id);
+    }
+  }, [projects, selectedId]);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    setFilesLoading(true);
+    setActivePath(null);
+    setFileData(null);
+    setDraft("");
+
+    projectFiles(selected)
+      .then((result) => {
+        if (cancelled) return;
+        setFiles(result);
+        const firstFolder = result[0]?.path.split("/")[0];
+        if (firstFolder) setOpenFolders((current) => ({ ...current, [firstFolder]: true }));
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) flash("Could not read project folder: " + String(error));
+      })
+      .finally(() => {
+        if (!cancelled) setFilesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, flash, selected]);
+
+  const folders = useMemo(() => {
+    const needle = fileQuery.trim().toLowerCase();
+    const groups = new Map<string, ProjectFileInfo[]>();
+    for (const file of files) {
+      if (needle && !(file.path + " " + file.name).toLowerCase().includes(needle)) continue;
+      const folder = file.path.includes("/") ? file.path.split("/")[0] : "root";
+      const list = groups.get(folder) ?? [];
+      list.push(file);
+      groups.set(folder, list);
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [files, fileQuery]);
 
   const filteredProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -64,47 +151,84 @@ export function ProjectManager() {
     );
   }, [projects, query]);
 
-  const folders = useMemo(() => {
-    const needle = fileQuery.trim().toLowerCase();
-    const groups = new Map<string, CodeFile[]>();
-    for (const file of CODE_FILES) {
-      if (needle && !(file.path + " " + file.name).toLowerCase().includes(needle)) continue;
-      const folder = file.path.includes("/") ? file.path.split("/")[0] : "root";
-      const list = groups.get(folder) ?? [];
-      list.push(file);
-      groups.set(folder, list);
-    }
-    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [fileQuery]);
-
-  const activeFile = CODE_FILES.find((file) => file.id === selectedFileId) ?? null;
+  const dirty = fileData ? draft !== fileData.content : false;
 
   const enter = (target: Project, filePath?: string) => {
     launchProject(target);
-    if (filePath) openFile(filePath);
+    if (filePath && CODE_FILES.some((entry) => entry.path === filePath)) openFile(filePath);
   };
 
-  const submitNewProject = () => {
+  const selectFile = async (file: ProjectFileInfo) => {
+    if (!selected) return;
+    setActivePath(file.path);
+    try {
+      const data = await readProjectFile(selected, file.path);
+      setFileData(data);
+      setDraft(data.content);
+    } catch (error: unknown) {
+      setFileData(null);
+      setDraft("");
+      flash("Could not read " + file.path + ": " + String(error));
+    }
+  };
+
+  const save = async () => {
+    if (!selected || !activePath || !fileData || saving) return;
+    setSaving(true);
+    try {
+      const result = await writeProjectFile(selected, activePath, draft);
+      setFileData({ ...fileData, content: draft, size: result.size, mtime: result.mtime });
+      setFiles((current) =>
+        current.map((entry) =>
+          entry.path === activePath ? { ...entry, size: result.size, mtime: result.mtime } : entry,
+        ),
+      );
+      flash("Saved " + activePath);
+      pushLog("AcidEngine", "ok", "wrote res://" + activePath + " · " + formatSize(result.size));
+      refreshProjects();
+    } catch (error: unknown) {
+      flash("Save failed: " + String(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openFolder = async () => {
+    if (!disk) {
+      flash("Opening a folder requires the desktop app");
+      return;
+    }
+    setBusy(true);
+    try {
+      const opened = await openProjectFolder();
+      if (opened) {
+        refreshProjects();
+        setSelectedId(opened.id);
+        flash("Opened " + opened.path);
+      }
+    } catch (error: unknown) {
+      flash("Could not open folder: " + String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitNewProject = async () => {
     const name = draftName.trim();
-    if (!name) return;
-    const template = PROJECT_TEMPLATES.find((entry) => entry.id === draftTemplate) ?? PROJECT_TEMPLATES[0];
-    const next: Project = {
-      id: uid("project"),
-      name,
-      slug: slugify(name),
-      branch: "main",
-      environment: "Local",
-      path: "~/AcidMade/" + slugify(name),
-      summary: template.summary,
-      scene: template.scene,
-      template: template.name,
-      updated: "just now",
-      custom: true,
-    };
-    createProject(next);
-    setSelectedId(next.id);
-    setCreating(false);
-    setDraftName("");
+    if (!name || busy) return;
+    setBusy(true);
+    try {
+      const next = await createProject({ name, template: draftTemplate });
+      setSelectedId(next.id);
+      setCreating(false);
+      setDraftName("");
+      flash("Created " + next.name + (disk ? " on disk" : " in the browser preview"));
+      refreshProjects();
+    } catch (error: unknown) {
+      flash("Could not create project: " + String(error));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -118,7 +242,7 @@ export function ProjectManager() {
           project manager
         </span>
 
-        <div className="ml-4 flex h-[26px] min-w-0 max-w-[420px] flex-1 items-center gap-1.5 border border-line bg-panel px-2">
+        <div className="ml-4 flex h-[26px] min-w-0 max-w-[360px] flex-1 items-center gap-1.5 border border-line bg-panel px-2">
           <Search size={11} className="shrink-0 text-zinc-600" />
           <input
             value={query}
@@ -141,6 +265,15 @@ export function ProjectManager() {
 
         <button
           type="button"
+          onClick={openFolder}
+          disabled={busy}
+          className="flex h-[26px] items-center gap-1.5 border border-line bg-panel px-2 text-[10.5px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:text-zinc-700"
+        >
+          <FolderSearch size={11} />
+          Open folder
+        </button>
+        <button
+          type="button"
           onClick={() => setCreating(true)}
           className="flex h-[26px] items-center gap-1.5 border border-line bg-panel px-2 text-[10.5px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
         >
@@ -158,11 +291,13 @@ export function ProjectManager() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-[214px] shrink-0 flex-col border-r border-line bg-panel sm:w-[248px] xl:w-[290px]">
+        <aside className="flex w-[214px] shrink-0 flex-col border-r border-line bg-panel sm:w-[248px] xl:w-[286px]">
           <div className="flex h-[26px] shrink-0 items-center gap-1 border-b border-line px-2">
             <span className="label-caps text-zinc-400">Projects</span>
             <span className="font-mono text-[8px] text-zinc-700">{projects.length}</span>
-            <span className="ml-auto font-mono text-[8px] text-zinc-700">local</span>
+            <span className="ml-auto font-mono text-[8px] text-zinc-700">
+              {disk ? "disk" : "preview"}
+            </span>
           </div>
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto py-1">
             {filteredProjects.map((entry) => {
@@ -175,26 +310,14 @@ export function ProjectManager() {
                   onDoubleClick={() => enter(entry)}
                   className={cx(
                     "group flex w-full flex-col gap-1 border-l-2 px-2.5 py-2 text-left transition-colors",
-                    active
-                      ? "border-acid bg-acid/[0.06]"
-                      : "border-transparent hover:bg-white/[0.03]",
+                    active ? "border-acid bg-acid/[0.06]" : "border-transparent hover:bg-white/[0.03]",
                   )}
                 >
                   <span className="flex w-full items-center gap-1.5">
                     <Folder size={11} className={active ? "text-acid" : "text-zinc-600"} />
-                    <span
-                      className={cx(
-                        "truncate text-[11px]",
-                        active ? "text-zinc-100" : "text-zinc-400",
-                      )}
-                    >
+                    <span className={cx("truncate text-[11px]", active ? "text-zinc-100" : "text-zinc-400")}>
                       {entry.name}
                     </span>
-                    {entry.custom ? (
-                      <span className="ml-auto font-mono text-[7px] uppercase tracking-[0.08em] text-acid/60">
-                        new
-                      </span>
-                    ) : null}
                   </span>
                   <span className="flex items-center gap-1.5 truncate font-mono text-[8.5px] text-zinc-600">
                     <GitBranch size={8} />
@@ -209,9 +332,12 @@ export function ProjectManager() {
               );
             })}
             {filteredProjects.length === 0 ? (
-              <p className="px-3 py-6 text-[10px] leading-relaxed text-zinc-600">
-                No project matches “{query}”. Clear the search or create a new project.
-              </p>
+              <div className="px-3 py-6">
+                <p className="text-[10px] leading-relaxed text-zinc-600">
+                  No project matches “{query}”. Clear the search, create one, or open an existing
+                  folder.
+                </p>
+              </div>
             ) : null}
           </div>
 
@@ -248,31 +374,47 @@ export function ProjectManager() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-zinc-100">
-                    {selected?.name}
+                    {selected?.name ?? "No project"}
                   </h1>
                   <span className="border border-line px-1.5 py-[1px] font-mono text-[8px] uppercase tracking-[0.08em] text-zinc-500">
-                    {selected?.environment}
+                    {selected?.environment ?? "—"}
                   </span>
                   <span className="font-mono text-[8.5px] text-zinc-600">{selected?.slug}</span>
                 </div>
                 <p className="mt-1 max-w-[70ch] text-[10.5px] leading-relaxed text-zinc-500">
-                  {selected?.summary ?? "No description yet."}
+                  {selected?.summary || "No description yet."}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => selected && enter(selected)}
-                className="flex h-[26px] shrink-0 items-center gap-1.5 border border-acid/40 bg-acid/[0.1] px-2.5 text-[10px] font-medium text-acid transition-colors hover:bg-acid/[0.16]"
-              >
-                <Rocket size={11} />
-                Open
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selected) return;
+                    void revealProject(selected).then((ok) => {
+                      if (!ok) flash("Reveal requires the desktop app");
+                    });
+                  }}
+                  title="Reveal folder on disk"
+                  className="flex h-[26px] items-center gap-1.5 border border-line px-2 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+                >
+                  <SquareArrowOutUpRight size={11} />
+                  Reveal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selected && enter(selected)}
+                  className="flex h-[26px] items-center gap-1.5 border border-acid/40 bg-acid/[0.1] px-2.5 text-[10px] font-medium text-acid transition-colors hover:bg-acid/[0.16]"
+                >
+                  <Rocket size={11} />
+                  Open
+                </button>
+              </div>
             </div>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 border-t border-line-soft pt-2 font-mono text-[9px] md:grid-cols-4">
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-zinc-700">branch</dt>
-                <dd className="truncate text-zinc-400">{selected?.branch}</dd>
+                <dd className="truncate text-zinc-400">{selected?.branch ?? "—"}</dd>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-zinc-700">scene</dt>
@@ -280,7 +422,7 @@ export function ProjectManager() {
               </div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-zinc-700">files</dt>
-                <dd className="text-zinc-400">{CODE_FILES.length}</dd>
+                <dd className="text-zinc-400">{files.length}</dd>
               </div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-zinc-700">updated</dt>
@@ -291,8 +433,11 @@ export function ProjectManager() {
 
           <div className="flex h-[27px] shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2">
             <span className="label-caps text-zinc-400">Files</span>
-            <span className="font-mono text-[8px] text-zinc-700">res://</span>
-            <div className="ml-auto flex h-[20px] w-[190px] items-center gap-1 border border-line-soft bg-void px-1.5">
+            <span className="font-mono text-[8px] text-zinc-700">{disk ? "disk" : "catalogue"}</span>
+            {filesLoading ? (
+              <span className="font-mono text-[8.5px] text-zinc-600">reading…</span>
+            ) : null}
+            <div className="ml-auto flex h-[20px] w-[180px] items-center gap-1 border border-line-soft bg-void px-1.5">
               <Search size={9} className="shrink-0 text-zinc-600" />
               <input
                 value={fileQuery}
@@ -305,15 +450,18 @@ export function ProjectManager() {
           </div>
 
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto py-1">
-            {folders.map(([folder, files]) => {
+            {folders.length === 0 && !filesLoading ? (
+              <p className="px-4 py-6 text-[10px] leading-relaxed text-zinc-600">
+                This project folder is empty. Create a scene or write a file from the inspector.
+              </p>
+            ) : null}
+            {folders.map(([folder, entries]) => {
               const open = openFolders[folder] ?? false;
               return (
                 <div key={folder}>
                   <button
                     type="button"
-                    onClick={() =>
-                      setOpenFolders((current) => ({ ...current, [folder]: !open }))
-                    }
+                    onClick={() => setOpenFolders((current) => ({ ...current, [folder]: !open }))}
                     className="flex h-[22px] w-full items-center gap-1.5 px-3 font-mono text-[10px] text-zinc-500 hover:bg-white/[0.03]"
                   >
                     <ChevronRight
@@ -326,24 +474,33 @@ export function ProjectManager() {
                       <Folder size={11} className="text-zinc-600" />
                     )}
                     {folder}
-                    <span className="ml-auto text-[7.5px] text-zinc-700">{files.length}</span>
+                    <span className="ml-auto text-[7.5px] text-zinc-700">{entries.length}</span>
                   </button>
                   {open
-                    ? files.map((file) => (
+                    ? entries.map((file) => (
                         <button
-                          key={file.id}
+                          key={file.path}
                           type="button"
-                          onClick={() => setSelectedFileId(file.id)}
-                          onDoubleClick={() => enter(selected, file.path)}
+                          onClick={() => void selectFile(file)}
+                          onDoubleClick={() => {
+                            if (CODE_FILES.some((entry) => entry.path === file.path)) {
+                              enter(selected, file.path);
+                            } else {
+                              flash("res://" + file.path + " is on disk but not in the editor catalogue");
+                            }
+                          }}
                           className={cx(
                             "flex h-[21px] w-full items-center gap-1.5 pl-8 pr-3 text-left font-mono text-[10px] transition-colors",
-                            selectedFileId === file.id
+                            activePath === file.path
                               ? "bg-acid/[0.07] text-zinc-100"
                               : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300",
                           )}
                         >
-                          <FileGlyph file={file} />
+                          <FileGlyph language={file.language} />
                           <span className="truncate">{file.name}</span>
+                          <span className="ml-auto shrink-0 text-[7.5px] text-zinc-700">
+                            {formatSize(file.size)}
+                          </span>
                         </button>
                       ))
                     : null}
@@ -353,75 +510,97 @@ export function ProjectManager() {
           </div>
         </main>
 
-        <aside className="hidden w-[300px] shrink-0 flex-col border-l border-line bg-panel xl:flex">
+        <aside className="hidden w-[320px] shrink-0 flex-col border-l border-line bg-panel xl:flex">
           <div className="flex h-[26px] shrink-0 items-center gap-1 border-b border-line px-2">
-            <span className="label-caps text-zinc-400">{activeFile ? "File" : "Project"}</span>
+            <span className="label-caps text-zinc-400">{activePath ? "File" : "Project"}</span>
             <span className="ml-auto font-mono text-[8px] text-zinc-700">res://</span>
           </div>
 
-          {activeFile ? (
-            <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
-              <div className="flex items-center gap-1.5">
-                <FileGlyph file={activeFile} />
-                <span className="truncate text-[11px] text-zinc-200">{activeFile.name}</span>
+          {activePath && fileData ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="shrink-0 border-b border-line px-3 py-2">
+                <div className="flex items-center gap-1.5">
+                  <FileGlyph language={fileData.language} />
+                  <span className="truncate text-[11px] text-zinc-200">
+                    {activePath.split("/").at(-1)}
+                  </span>
+                  {dirty ? (
+                    <span className="ml-auto font-mono text-[8px] uppercase tracking-[0.08em] text-warn">
+                      edited
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-1 break-all font-mono text-[8.5px] text-zinc-600">
+                  res://{activePath}
+                </div>
+                <div className="mt-1 flex gap-3 font-mono text-[8.5px] text-zinc-700">
+                  <span>{formatSize(fileData.size)}</span>
+                  <span>{fileData.language}</span>
+                  <span>{new Date(fileData.mtime).toLocaleString()}</span>
+                </div>
               </div>
-              <div className="mt-1 break-all font-mono text-[8.5px] text-zinc-600">
-                res://{activeFile.path}
+
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+                    event.preventDefault();
+                    void save();
+                  }
+                }}
+                spellCheck={false}
+                readOnly={!disk}
+                className="scroll-thin min-h-0 flex-1 resize-none bg-void p-2 font-mono text-[9px] leading-[1.6] text-zinc-400 outline-none"
+              />
+
+              <div className="flex shrink-0 items-center gap-1.5 border-t border-line p-2">
+                <button
+                  type="button"
+                  onClick={() => void save()}
+                  disabled={!dirty || saving || !disk}
+                  className="flex h-[26px] flex-1 items-center justify-center gap-1.5 border border-acid/40 bg-acid/[0.1] text-[10px] font-medium text-acid hover:bg-acid/[0.16] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-zinc-700"
+                >
+                  <Save size={11} />
+                  {saving ? "Saving…" : disk ? "Save to disk" : "Read-only"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (CODE_FILES.some((entry) => entry.path === activePath)) {
+                      setActivePath(null);
+                      enter(selected, activePath);
+                    } else {
+                      flash("Not in the editor catalogue · edit it here instead");
+                    }
+                  }}
+                  className="flex h-[26px] items-center gap-1.5 border border-line px-2 text-[10px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-100"
+                >
+                  <TerminalSquare size={11} />
+                  Editor
+                </button>
               </div>
-              <dl className="mt-3 space-y-1 border-t border-line-soft pt-2 font-mono text-[9px]">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-zinc-700">language</dt>
-                  <dd className="text-zinc-400">{activeFile.language}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-zinc-700">group</dt>
-                  <dd className="text-zinc-400">{activeFile.group}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-zinc-700">origin</dt>
-                  <dd className="truncate text-zinc-400">{activeFile.generatedBy}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-zinc-700">changes</dt>
-                  <dd className="text-zinc-400">
-                    +{activeFile.additions} / −{activeFile.deletions}
-                  </dd>
-                </div>
-              </dl>
-              <pre className="scroll-thin mt-3 max-h-[46vh] overflow-auto border border-line-soft bg-void p-2 font-mono text-[8.5px] leading-[1.55] text-zinc-500">
-                {activeFile.content.slice(0, 1600)}
-              </pre>
-              <button
-                type="button"
-                onClick={() => enter(selected, activeFile.path)}
-                className="mt-3 flex h-[26px] w-full items-center justify-center gap-1.5 border border-acid/40 bg-acid/[0.1] text-[10px] font-medium text-acid hover:bg-acid/[0.16]"
-              >
-                <TerminalSquare size={11} />
-                Open in editor
-              </button>
             </div>
           ) : (
             <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
               <p className="text-[10px] leading-relaxed text-zinc-600">
-                Select a resource to inspect it. Double-click a project or a file to open it in the
-                editor.
+                Select a file to read it from disk. The desktop build writes it back when you save;
+                the browser preview is read-only.
               </p>
               <div className="mt-3 border border-line-soft p-2">
-                <div className="label-caps mb-1 text-zinc-500">Template</div>
-                <div className="text-[10px] text-zinc-400">{selected?.template ?? "—"}</div>
-              </div>
-              <div className="mt-2 border border-line-soft p-2">
-                <div className="label-caps mb-1 text-zinc-500">Path</div>
+                <div className="label-caps mb-1 text-zinc-500">Folder</div>
                 <div className="break-all font-mono text-[9px] text-zinc-500">
                   {selected?.path ?? "~/AcidMade"}
                 </div>
               </div>
               <div className="mt-2 border border-line-soft p-2">
-                <div className="label-caps mb-1 text-zinc-500">Persistence</div>
+                <div className="label-caps mb-1 text-zinc-500">Template</div>
+                <div className="text-[10px] text-zinc-400">{selected?.template ?? "—"}</div>
+              </div>
+              <div className="mt-2 flex items-center gap-2 border border-line-soft p-2">
+                <HardDrive size={12} className={disk ? "text-acid" : "text-zinc-600"} />
                 <div className="font-mono text-[9px] leading-relaxed text-zinc-500">
-                  workspace key · acidmade.workspace.v1
-                  <br />
-                  launcher key · acidmade.launcher.v1
+                  {disk ? "filesystem · IPC" : "browser preview · read-only"}
                 </div>
               </div>
             </div>
@@ -430,9 +609,23 @@ export function ProjectManager() {
       </div>
 
       <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-line bg-shell px-2 font-mono text-[8.5px] text-zinc-600">
-        <span className="text-acid/70">● ready</span>
-        <span>double-click to open</span>
-        <span className="ml-auto">{projects.length} projects · {CODE_FILES.length} resources</span>
+        <span className="text-acid/70">● {disk ? "disk" : "preview"}</span>
+        <span className="truncate">{root || "res:// (browser preview)"}</span>
+        {note ? <span className="truncate text-zinc-300">{note}</span> : null}
+        <span className="ml-auto shrink-0">
+          {projects.length} projects · {files.length} files
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            refreshProjects();
+            if (selected) void projectFiles(selected).then(setFiles).catch(() => undefined);
+          }}
+          className="grid h-4 w-4 place-items-center text-zinc-600 hover:text-zinc-300"
+          aria-label="Refresh projects"
+        >
+          <RefreshCw size={9} />
+        </button>
       </footer>
 
       {creating ? (
@@ -467,7 +660,7 @@ export function ProjectManager() {
                   value={draftName}
                   onChange={(event) => setDraftName(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") submitNewProject();
+                    if (event.key === "Enter") void submitNewProject();
                   }}
                   placeholder="Orbital Console"
                   autoFocus
@@ -503,6 +696,11 @@ export function ProjectManager() {
                   ))}
                 </div>
               </div>
+              <p className="text-[9px] leading-relaxed text-zinc-600">
+                {disk
+                  ? "The folder, scene and manifest are written to your AcidMade projects directory."
+                  : "The browser preview keeps this project in local storage; the desktop build writes a real folder."}
+              </p>
               <div className="flex items-center gap-1.5 pt-1">
                 <button
                   type="button"
@@ -513,12 +711,12 @@ export function ProjectManager() {
                 </button>
                 <button
                   type="button"
-                  onClick={submitNewProject}
-                  disabled={!draftName.trim()}
+                  onClick={() => void submitNewProject()}
+                  disabled={!draftName.trim() || busy}
                   className="flex h-[27px] flex-1 items-center justify-center gap-1 border border-acid/40 bg-acid/[0.1] text-[9.5px] font-medium text-acid hover:bg-acid/[0.16] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-zinc-700"
                 >
                   <Plus size={10} />
-                  Create &amp; open
+                  {busy ? "Creating…" : "Create & open"}
                 </button>
               </div>
             </div>

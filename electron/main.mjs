@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Menu, shell } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from "electron";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createProjectStore } from "./projects.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(here, "..");
@@ -11,6 +12,57 @@ const isDev = Boolean(devUrl);
 
 let mainWindow = null;
 let runtimeProcess = null;
+
+let projectStore = null;
+
+// Created lazily: app.getPath() is only reliable once Electron is ready.
+function store() {
+  if (!projectStore) {
+    const root = process.env.ACIDMADE_PROJECTS_DIR
+      ? path.resolve(process.env.ACIDMADE_PROJECTS_DIR)
+      : path.join(app.getPath("documents"), "AcidMade");
+    projectStore = createProjectStore({ rootDir: root });
+  }
+  return projectStore;
+}
+
+function registerProjectIpc() {
+  ipcMain.handle("acidmade:projects:list", async () => {
+    await store().seedIfEmpty();
+    return { root: store().root, projects: await store().list() };
+  });
+
+  ipcMain.handle("acidmade:projects:create", (_event, input) =>
+    store().create({ name: input?.name, template: input?.template }),
+  );
+
+  ipcMain.handle("acidmade:projects:open-dialog", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Open project folder",
+      buttonLabel: "Open project",
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: store().root,
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return store().open(result.filePaths[0]);
+  });
+
+  ipcMain.handle("acidmade:projects:reveal", (_event, projectPath) => {
+    if (typeof projectPath === "string" && projectPath.length > 0) {
+      shell.showItemInFolder(projectPath);
+    }
+  });
+
+  ipcMain.handle("acidmade:projects:tree", (_event, projectPath) => store().tree(projectPath));
+
+  ipcMain.handle("acidmade:projects:read-file", (_event, payload) =>
+    store().readFile(payload?.projectPath, payload?.relative),
+  );
+
+  ipcMain.handle("acidmade:projects:write-file", (_event, payload) =>
+    store().writeFile(payload?.projectPath, payload?.relative, payload?.content),
+  );
+}
 
 function startRuntime() {
   const entry = path.join(appRoot, "server", "index.mjs");
@@ -151,6 +203,7 @@ if (!singleInstance) {
 
   app.whenReady().then(() => {
     if (process.platform === "win32") app.setAppUserModelId("com.acidmade.app");
+    registerProjectIpc();
     startRuntime();
     createWindow();
 

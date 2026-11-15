@@ -45,6 +45,7 @@ import type {
 import { nowStamp, uid } from "../lib/utils";
 import { clearWorkspace, loadWorkspace, saveWorkspace } from "../lib/persistence";
 import { loadLauncher, saveLauncher } from "../lib/launcher";
+import { createProjectOnDisk, listProjects } from "../lib/projects";
 import { tabIdForFile } from "../lib/tabs";
 import {
   connectRunStream,
@@ -194,6 +195,7 @@ type Action =
   | { type: "open-launcher" }
   | { type: "launch-project"; project: Project }
   | { type: "create-project"; project: Project }
+  | { type: "set-projects"; projects: Project[] }
   | { type: "add-node"; input: NewNodeInput }
   | { type: "rename-node"; nodeId: string; name: string }
   | { type: "run-start"; kind: RunKind }
@@ -405,6 +407,15 @@ function reducer(state: EngineState, action: Action): EngineState {
       return { ...state, project: action.project };
     case "open-launcher":
       return { ...state, launcherOpen: true };
+    case "set-projects": {
+      if (action.projects.length === 0) return state;
+      const current = action.projects.find((entry) => entry.id === state.project.id);
+      return {
+        ...state,
+        projects: action.projects,
+        project: current ?? action.projects[0],
+      };
+    }
     case "launch-project":
       return {
         ...state,
@@ -773,7 +784,8 @@ interface EngineActions {
   setProject: (project: Project) => void;
   openLauncher: () => void;
   launchProject: (project: Project) => void;
-  createProject: (project: Project) => void;
+  createProject: (input: { name: string; template?: string }) => Promise<Project>;
+  refreshProjects: () => void;
   addNode: (input: NewNodeInput) => void;
   renameNode: (nodeId: string, name: string) => void;
   startBuild: () => void;
@@ -1150,6 +1162,28 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const loadProjectList = useCallback(async () => {
+    try {
+      const result = await listProjects();
+      if (result.diskBacked) dispatch({ type: "set-projects", projects: result.projects });
+    } catch (error) {
+      dispatch({
+        type: "log",
+        entry: makeLog({
+          time: nowStamp(),
+          agent: "AcidEngine",
+          channel: "console",
+          level: "warn",
+          message: "project list unavailable · " + messageOf(error),
+        }),
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProjectList();
+  }, [loadProjectList]);
+
   const busy = state.run.status === "building" || state.run.status === "deploying";
   const canStop =
     busy || state.run.status === "running" || state.run.status === "deployed";
@@ -1193,7 +1227,14 @@ export function EngineProvider({ children }: { children: ReactNode }) {
           }),
         });
       },
-      createProject: (project) => dispatch({ type: "create-project", project }),
+      createProject: async (input) => {
+        const project = await createProjectOnDisk(input);
+        dispatch({ type: "create-project", project });
+        return project;
+      },
+      refreshProjects: () => {
+        void loadProjectList();
+      },
       addNode: (input) => dispatch({ type: "add-node", input }),
       renameNode: (nodeId, name) => dispatch({ type: "rename-node", nodeId, name }),
       startBuild: () => {
@@ -1248,7 +1289,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         void probeRuntime();
       },
     }),
-    [abortActiveRun, busy, canPause, canStop, launchRun, probeRuntime, togglePause],
+    [abortActiveRun, busy, canPause, canStop, loadProjectList, launchRun, probeRuntime, togglePause],
   );
 
   const value = useMemo<EngineContextValue>(

@@ -6,6 +6,7 @@ import {
   Clapperboard,
   Code2,
   Command,
+  FileDown,
   FlaskConical,
   FolderCog,
   Hammer,
@@ -25,6 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEngine } from "../state/EngineContext";
+import { downloadDocumentation } from "../lib/docs";
 import { NODE_CATALOG } from "../data/nodeCatalog";
 import { countSceneNodes, findSceneNode } from "../data/scene";
 import { cx } from "../lib/utils";
@@ -323,6 +325,14 @@ export function EngineBar() {
     {
       label: "Help",
       items: [
+        {
+          label: "Download Documentation (PDF)",
+          icon: FileDown,
+          action: () => {
+            downloadDocumentation();
+            pushLog("AcidEngine", "info", "documentation PDF · AcidMade-Documentation.pdf");
+          },
+        },
         { label: "Engine Documentation", icon: Info, action: () => pushLog("AcidEngine", "info", "docs · res://docs/acidmade-engine.md") },
         { label: "Scene Format · acid/1.0", icon: Layers, action: () => pushLog("AcidEngine", "info", "scene schema → res://acid.config.json") },
         { label: "About AcidMade", icon: FlaskConical, action: () => setAboutOpen(true) },

@@ -13,6 +13,10 @@ AcidMade is a desktop editor first: five resizable docks, a live composited
 viewport, an inspector with overrides, and a local tool-executing runtime that
 compiles, validates and explains what it finds.
 
+[**Download the complete documentation (PDF)**](public/AcidMade-Documentation.pdf)
+— the full engine manual, also available in-app from **Help → Download
+Documentation (PDF)**.
+
 ![AcidMade editor — viewport, scene tree, inspector and output dock](docs/screenshots/editor-viewport.png)
 
 ## Contents
@@ -95,9 +99,24 @@ project contains.
 - **Open in editor** — opens the selected project, or jumps straight to a
   specific resource in the script workspace.
 
-Created projects and the last opened project survive a reload through
-`acidmade.launcher.v1`. Return to the manager at any time from
-**Project → Projects & Files**.
+The desktop app works on real folders. Projects live under `Documents/AcidMade`
+(override with `ACIDMADE_PROJECTS_DIR`); each one is a directory with an
+`acidmade.json` manifest plus its `scenes/`, `agents/` and other resources.
+
+- **Create** writes the folder, the manifest, a starter scene and a README.
+- **Open folder…** registers any existing directory and adds a manifest if it has
+  none.
+- **Reveal** opens the folder in the system file manager.
+- **Read/write** selecting a file reads it from disk; editing and `Ctrl`/`Cmd`+`S`
+  write it back and bump the manifest timestamp.
+
+All of that goes through a narrow IPC bridge (`electron/preload.mjs`); the
+renderer never touches `fs` directly and every path is resolved and checked to
+stay inside the project directory. In the browser preview there is no
+filesystem access, so the same screen falls back to the resource catalogue and
+is read-only.
+
+Return to the manager at any time from **Project → Projects & Files**.
 
 ## What is in the editor
 
@@ -175,11 +194,11 @@ pushed.
 ## How it is put together
 
 ```
-electron/           main process, preload bridge
+electron/           main process, preload bridge, on-disk project store
 server/             local agent runtime, AI proxy, tools
 src/components/     editor docks, panels, project manager
 src/data/           scene tree, resources, projects, build script
-src/lib/            persistence, runtime client, AI client, launcher
+src/lib/            persistence, runtime client, AI client, projects API
 src/state/          EngineContext reducer and actions
 docs/               the long-form documentation
 scripts/            dev launcher, icon generation
@@ -213,6 +232,11 @@ scripts/            dev launcher, icon generation
 
 ## Documentation
 
+- [AcidMade-Documentation.pdf](public/AcidMade-Documentation.pdf) — the complete
+  manual as one PDF: editor, scene format, signals, inspector, agent runtime,
+  AI layer, persistence, packaging and troubleshooting.
+- [acidmade-manual.md](docs/acidmade-manual.md) — the manual source the PDF is
+  generated from (`npm run docs:pdf`).
 - [acidmade-engine.md](docs/acidmade-engine.md) — scene graph, nodes, signals,
   inspector, viewports, scripting, runtime, persistence, build semantics.
 - [ai-provider-setup.md](docs/ai-provider-setup.md) — providers, BYOK, attachments,
