@@ -148,7 +148,9 @@ jobs:
   macos:
     name: macOS · DMG + .app
     needs: prepare
-    runs-on: macos-14
+    # macos-14 resolves to an arm64 runner this repository cannot use; macos-13
+    # is the x64 image, and electron-builder still produces both architectures.
+    runs-on: macos-13
     env:
       CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -227,7 +229,8 @@ jobs:
         id: collected
         run: |
           set -euo pipefail
-          COUNT=$(find artifacts -type f 2>/dev/null | wc -l | tr -d ' ')
+          mkdir -p artifacts
+          COUNT=$(find artifacts -type f | wc -l | tr -d ' ')
           echo "files=$COUNT" >> "$GITHUB_OUTPUT"
           find artifacts -type f -printf '%f (%s bytes)\n' 2>/dev/null || true
           if [ "$COUNT" = "0" ]; then
