@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -23,16 +23,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Install Flatpak tooling
+      - run: npm run icon
+      - run: npm run build
+      - name: Build AppImage
+        run: npx electron-builder --linux AppImage --publish never
+      - name: Build Flatpak
+        continue-on-error: true
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.electronjs.Electron2.BaseApp//24.08
-      - run: npm run icon
-      - run: npm run build
-      - name: Package AppImage and Flatpak
-        run: npx electron-builder --linux AppImage flatpak --publish never
+          npx electron-builder --linux flatpak --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -53,8 +55,11 @@ jobs:
       - run: npm ci
       - run: npm run icon
       - run: npm run build
-      - name: Package Windows targets
-        run: npx electron-builder --win nsis msi portable --publish never
+      - name: Build installer and portable app
+        run: npx electron-builder --win nsis portable --publish never
+      - name: Build MSI
+        continue-on-error: true
+        run: npx electron-builder --win msi --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -75,16 +80,18 @@ jobs:
       - run: npm ci
       - run: npm run icon
       - run: npm run build
-      - name: Package macOS targets
+      - name: Build DMG, zip and .app bundles
         run: npx electron-builder --mac dmg zip dir --publish never
       - name: Zip the .app bundles
         run: |
+          VERSION=$(node -p "require('./package.json').version")
           cd release
-          for dir in mac mac-arm64; do
-            if [ -d "$dir/AcidMade.app" ]; then
-              ditto -c -k --sequesterRsrc --keepParent "$dir/AcidMade.app" "AcidMade-${dir#mac-}-app.zip"
-            fi
-          done
+          if [ -d mac/AcidMade.app ]; then
+            ditto -c -k --sequesterRsrc --keepParent mac/AcidMade.app "AcidMade-$VERSION-x64-app.zip"
+          fi
+          if [ -d mac-arm64/AcidMade.app ]; then
+            ditto -c -k --sequesterRsrc --keepParent mac-arm64/AcidMade.app "AcidMade-$VERSION-arm64-app.zip"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -95,17 +102,21 @@ jobs:
 
   release:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/')
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: AcidMade ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: AcidMade v${{ steps.version.outputs.version }}
+          target_commitish: main
+          allowUpdates: true
           generate_release_notes: true
           files: artifacts/**/*
