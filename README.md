@@ -10,6 +10,10 @@ AcidMade is a scene editor first. The document you are reading is the full proje
 
 Most web apps hide their structure behind abstraction layers. AcidMade puts the structure on the desk: nodes, scenes and signals at one scale, agents and provider chat at another, and a local runtime that can inspect, build and patch the same scene the editor shows. The UI is deliberately dense and desktop-first, modeled on Godot 4's editor density rather than web convention.
 
+![AcidMade editor — viewport, scene tree, inspector and output dock](qa-final-1440.png)
+
+![AcidMade editor — agent hub, script tab and inspector](qa-agents-1024-fixed.png)
+
 ## What it is
 
 - **Scene editor:** a five-dock workspace — scene tree, file system, viewports/scripts/signals/agents, inspector and bottom output panel — with resizable panes, a zoomable viewport, and a live agent overlay during runs.
