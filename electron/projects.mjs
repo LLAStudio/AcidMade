@@ -46,6 +46,36 @@ function languageOf(file) {
   return LANGUAGES[path.extname(file).toLowerCase()] ?? "text";
 }
 
+function normalizeEntryPath(value) {
+  const cleaned = String(value ?? "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  if (!cleaned) throw new Error("path is required");
+  const parts = cleaned.split("/");
+  if (parts.some((part) => part === "" || part === ".." || part === ".")) {
+    throw new Error("invalid path");
+  }
+  return cleaned;
+}
+
+function starterContent(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".acid") {
+    return (
+      JSON.stringify(
+        { acid: "1.0", root: "MainApp", class: "AppRoot", nodes: [], signals: {} },
+        null,
+        2,
+      ) + "\n"
+    );
+  }
+  if (extension === ".json") return "{}\n";
+  if (extension === ".prompt") return "You are a helpful agent.\n";
+  if (extension === ".md") return "# New document\n";
+  return "";
+}
+
 function resolveInside(root, relative) {
   const base = path.resolve(root);
   const target = path.resolve(base, relative);
@@ -191,6 +221,14 @@ async function folderFiles(directory, prefix = "", depth = 0, out = []) {
     if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
     const relative = prefix ? prefix + "/" + entry.name : entry.name;
     if (entry.isDirectory()) {
+      const stats = await fs.stat(path.join(directory, entry.name)).catch(() => null);
+      out.push({
+        path: relative,
+        name: entry.name,
+        kind: "dir",
+        size: 0,
+        mtime: stats ? stats.mtime.toISOString() : null,
+      });
       await folderFiles(path.join(directory, entry.name), relative, depth + 1, out);
       continue;
     }
@@ -209,12 +247,25 @@ async function folderFiles(directory, prefix = "", depth = 0, out = []) {
 
 function archiveFiles(entries) {
   return [...entries.entries()]
-    .map(([entryPath, data]) => ({
-      path: entryPath,
-      name: entryPath.split("/").at(-1) ?? entryPath,
-      size: data.length,
-      language: languageOf(entryPath),
-    }))
+    .map(([entryPath, data]) => {
+      if (entryPath.endsWith("/")) {
+        const directory = entryPath.replace(/\/+$/, "");
+        return {
+          path: directory,
+          name: directory.split("/").at(-1) ?? directory,
+          kind: "dir",
+          size: 0,
+          language: "",
+        };
+      }
+      return {
+        path: entryPath,
+        name: entryPath.split("/").at(-1) ?? entryPath,
+        kind: "file",
+        size: data.length,
+        language: languageOf(entryPath),
+      };
+    })
     .sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -482,6 +533,121 @@ export function createProjectStore({ rootDir, seed = true }) {
     return { size: payload.length, mtime: fileStats.mtime.toISOString() };
   }
 
+  
+
+  async function createEntry(projectPath, relative, options = {}) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved);
+    const kind = options.kind === "dir" ? "dir" : "file";
+    const target = normalizeEntryPath(relative);
+
+    if (stats.isDirectory()) {
+      const absolute = resolveInside(resolved, target);
+      if (await fileExists(absolute)) throw new Error("already exists: " + target);
+      if (kind === "dir") {
+        await fs.mkdir(absolute, { recursive: false });
+      } else {
+        await fs.mkdir(path.dirname(absolute), { recursive: true });
+        await fs.writeFile(absolute, options.content ?? starterContent(target), { flag: "wx" });
+      }
+      return { path: target, kind };
+    }
+
+    const archive = await readArchive(resolved);
+    if (kind === "dir") {
+      if (archive.has(target + "/")) throw new Error("already exists: " + target);
+      archive.set(target + "/", Buffer.alloc(0));
+    } else {
+      if (archive.has(target)) throw new Error("already exists: " + target);
+      archive.set(target, Buffer.from(options.content ?? starterContent(target), "utf8"));
+    }
+
+    const entries = [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data }));
+    const manifestEntry = entries.find((entry) => entry.path === MANIFEST);
+    if (manifestEntry) {
+      const manifest = parseManifest(String(manifestEntry.data)) ?? {};
+      manifest.updatedAt = new Date().toISOString();
+      manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
+    }
+    await fs.writeFile(resolved, writeAcm(entries));
+    return { path: target, kind };
+  }
+
+  async function renameEntry(projectPath, from, to) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved);
+    const source = normalizeEntryPath(from);
+    const target = normalizeEntryPath(to);
+    if (source === target) return { path: target };
+
+    if (stats.isDirectory()) {
+      const absolute = resolveInside(resolved, source);
+      const next = resolveInside(resolved, target);
+      if (await fileExists(next)) throw new Error("already exists: " + target);
+      await fs.mkdir(path.dirname(next), { recursive: true });
+      await fs.rename(absolute, next);
+      return { path: target };
+    }
+
+    const archive = await readArchive(resolved);
+    const entries = [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data }));
+    const isFolder = archive.has(source + "/") || entries.some((entry) => entry.path.startsWith(source + "/"));
+    const collides = isFolder
+      ? entries.some((entry) => entry.path === target + "/" || entry.path.startsWith(target + "/"))
+      : entries.some((entry) => entry.path === target);
+    if (collides) throw new Error("already exists: " + target);
+    if (!isFolder && !archive.has(source)) throw new Error("not found: " + source);
+
+    const renamed = entries.map((entry) => {
+      if (entry.path === source) return { ...entry, path: target };
+      if (entry.path === source + "/") return { ...entry, path: target + "/" };
+      if (entry.path.startsWith(source + "/")) {
+        return { ...entry, path: target + entry.path.slice(source.length) };
+      }
+      return entry;
+    });
+
+    const manifestEntry = renamed.find((entry) => entry.path === MANIFEST);
+    if (manifestEntry) {
+      const manifest = parseManifest(String(manifestEntry.data)) ?? {};
+      manifest.updatedAt = new Date().toISOString();
+      manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
+    }
+    await fs.writeFile(resolved, writeAcm(renamed));
+    return { path: target, entries: renamed.length };
+  }
+
+  async function deleteEntry(projectPath, relative) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved);
+    const target = normalizeEntryPath(relative);
+
+    if (stats.isDirectory()) {
+      const absolute = resolveInside(resolved, target);
+      await fs.rm(absolute, { recursive: true, force: false });
+      return { path: target };
+    }
+
+    const archive = await readArchive(resolved);
+    const entries = [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data }));
+    const keep = entries.filter(
+      (entry) =>
+        entry.path !== target &&
+        entry.path !== target + "/" &&
+        !entry.path.startsWith(target + "/"),
+    );
+    if (keep.length === entries.length) throw new Error("not found: " + target);
+
+    const manifestEntry = keep.find((entry) => entry.path === MANIFEST);
+    if (manifestEntry) {
+      const manifest = parseManifest(String(manifestEntry.data)) ?? {};
+      manifest.updatedAt = new Date().toISOString();
+      manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
+    }
+    await fs.writeFile(resolved, writeAcm(keep));
+    return { path: target, removed: entries.length - keep.length };
+  }
+
   return {
     root,
     ensureRoot,
@@ -492,5 +658,8 @@ export function createProjectStore({ rootDir, seed = true }) {
     tree,
     readFile,
     writeFile,
+    createEntry,
+    renameEntry,
+    deleteEntry,
   };
 }

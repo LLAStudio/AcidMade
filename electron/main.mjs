@@ -63,6 +63,18 @@ function registerProjectIpc() {
   ipcMain.handle("acidmade:projects:write-file", (_event, payload) =>
     store().writeFile(payload?.projectPath, payload?.relative, payload?.content),
   );
+
+  ipcMain.handle("acidmade:projects:create-entry", (_event, payload) =>
+    store().createEntry(payload?.projectPath, payload?.relative, { kind: payload?.kind }),
+  );
+
+  ipcMain.handle("acidmade:projects:rename-entry", (_event, payload) =>
+    store().renameEntry(payload?.projectPath, payload?.from, payload?.to),
+  );
+
+  ipcMain.handle("acidmade:projects:delete-entry", (_event, payload) =>
+    store().deleteEntry(payload?.projectPath, payload?.relative),
+  );
 }
 
 function startRuntime() {

@@ -125,6 +125,15 @@ working.
 - Selecting a resource reads its entry from the container. `Ctrl`/`Cmd`+`S`
   rewrites the archive and updates `updatedAt` in the manifest. The browser
   preview is read-only.
+- **New file** writes an entry with starter content: a `acid/1.0` scene skeleton
+  for `.acid`, `{}` for `.json`, a short instruction for `.prompt`, a heading for
+  `.md`, and an empty body otherwise.
+- **New folder** writes a directory entry, so a folder with nothing in it is
+  still visible in the list.
+- **Rename** moves one file or every entry under a folder. The target must not
+  exist and `..` segments are rejected.
+- **Delete** removes a file, or a folder with everything inside it, after a
+  confirmation. The manifest timestamp is refreshed either way.
 
 ### 3.3 Resource browser
 

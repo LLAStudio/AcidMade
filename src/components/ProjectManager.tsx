@@ -4,12 +4,15 @@ import {
   ChevronRight,
   FileCode2,
   FileJson,
+  FilePlus2,
   Folder,
   FolderOpen,
+  FolderPlus,
   FolderSearch,
   GitBranch,
   HardDrive,
   Layers,
+  Pencil,
   Plus,
   RefreshCw,
   Rocket,
@@ -18,17 +21,21 @@ import {
   Sparkles,
   SquareArrowOutUpRight,
   TerminalSquare,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEngine } from "../state/EngineContext";
 import { CODE_FILES } from "../data/resources";
 import { PROJECT_TEMPLATES, type Project } from "../data/projects";
 import {
+  createProjectEntry,
+  deleteProjectEntry,
   isDiskBacked,
   listProjects,
   openProjectFile,
   projectFiles,
   readProjectFile,
+  renameProjectEntry,
   revealProject,
   writeProjectFile,
   type ProjectFileContent,
@@ -69,6 +76,12 @@ export function ProjectManager() {
   const [filesLoading, setFilesLoading] = useState(false);
   const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<{ path: string; kind: "file" | "dir" } | null>(null);
+  const [entryDialog, setEntryDialog] = useState<{ mode: "file" | "dir" | "rename"; value: string } | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; kind: "file" | "dir" } | null>(null);
+  const [entryBusy, setEntryBusy] = useState(false);
   const [fileData, setFileData] = useState<ProjectFileContent | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -106,6 +119,7 @@ export function ProjectManager() {
     let cancelled = false;
     setFilesLoading(true);
     setActivePath(null);
+    setSelectedEntry(null);
     setFileData(null);
     setDraft("");
 
@@ -131,7 +145,16 @@ export function ProjectManager() {
   const folders = useMemo(() => {
     const needle = fileQuery.trim().toLowerCase();
     const groups = new Map<string, ProjectFileInfo[]>();
+    const implicit = new Set<string>();
     for (const file of files) {
+      if (file.kind === "dir") continue;
+      const segments = file.path.split("/").slice(0, -1);
+      for (let index = 1; index <= segments.length; index += 1) {
+        implicit.add(segments.slice(0, index).join("/"));
+      }
+    }
+    for (const file of files) {
+      if (file.kind === "dir" && implicit.has(file.path)) continue;
       if (needle && !(file.path + " " + file.name).toLowerCase().includes(needle)) continue;
       const folder = file.path.includes("/") ? file.path.split("/")[0] : "root";
       const list = groups.get(folder) ?? [];
@@ -160,6 +183,7 @@ export function ProjectManager() {
 
   const selectFile = async (file: ProjectFileInfo) => {
     if (!selected) return;
+    setSelectedEntry({ path: file.path, kind: "file" });
     setActivePath(file.path);
     try {
       const data = await readProjectFile(selected, file.path);
@@ -190,6 +214,77 @@ export function ProjectManager() {
       flash("Save failed: " + String(error));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const refreshTree = async () => {
+    if (!selected) return;
+    try {
+      setFiles(await projectFiles(selected));
+    } catch (error: unknown) {
+      flash("Could not refresh resources: " + String(error));
+    }
+  };
+
+  const submitEntry = async () => {
+    if (!selected || !entryDialog || entryBusy) return;
+    const value = entryDialog.value.trim();
+    if (!value) return;
+    setEntryBusy(true);
+    try {
+      if (entryDialog.mode === "rename") {
+        if (!selectedEntry) return;
+        const result = await renameProjectEntry(selected, selectedEntry.path, value);
+        if (activePath === selectedEntry.path) setActivePath(result.path);
+        setSelectedEntry({ path: result.path, kind: selectedEntry.kind });
+        flash("Renamed to " + result.path);
+        pushLog("AcidEngine", "ok", "renamed res://" + selectedEntry.path + " to res://" + result.path);
+      } else {
+        const kind = entryDialog.mode;
+        await createProjectEntry(selected, value, kind);
+        flash((kind === "dir" ? "Created folder " : "Created file ") + value);
+        pushLog("AcidEngine", "ok", "created res://" + value);
+      }
+      await refreshTree();
+      refreshProjects();
+      setEntryDialog(null);
+    } catch (error: unknown) {
+      flash("Could not update resources: " + String(error));
+    } finally {
+      setEntryBusy(false);
+    }
+  };
+
+  const submitDelete = async () => {
+    if (!selected || !deleteTarget || entryBusy) return;
+    setEntryBusy(true);
+    try {
+      const target = deleteTarget;
+      const result = await deleteProjectEntry(selected, target.path);
+      if (activePath && (activePath === target.path || activePath.startsWith(target.path + "/"))) {
+        setActivePath(null);
+        setFileData(null);
+        setDraft("");
+      }
+      if (
+        selectedEntry &&
+        (selectedEntry.path === target.path || selectedEntry.path.startsWith(target.path + "/"))
+      ) {
+        setSelectedEntry(null);
+      }
+      flash(
+        "Deleted " +
+          target.path +
+          (result.removed && result.removed > 1 ? " · " + result.removed + " entries" : ""),
+      );
+      pushLog("AcidEngine", "warn", "deleted res://" + target.path);
+      await refreshTree();
+      refreshProjects();
+      setDeleteTarget(null);
+    } catch (error: unknown) {
+      flash("Delete failed: " + String(error));
+    } finally {
+      setEntryBusy(false);
     }
   };
 
@@ -437,7 +532,51 @@ export function ProjectManager() {
             {filesLoading ? (
               <span className="font-mono text-[8.5px] text-zinc-600">reading…</span>
             ) : null}
-            <div className="ml-auto flex h-[20px] w-[180px] items-center gap-1 border border-line-soft bg-void px-1.5">
+            <div className="ml-auto flex items-center gap-0.5">
+              <button
+                type="button"
+                title="New file"
+                aria-label="New file"
+                disabled={!disk}
+                onClick={() => setEntryDialog({ mode: "file", value: "" })}
+                className="grid h-[18px] w-[18px] place-items-center text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-800 disabled:hover:bg-transparent"
+              >
+                <FilePlus2 size={10} />
+              </button>
+              <button
+                type="button"
+                title="New folder"
+                aria-label="New folder"
+                disabled={!disk}
+                onClick={() => setEntryDialog({ mode: "dir", value: "" })}
+                className="grid h-[18px] w-[18px] place-items-center text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-800 disabled:hover:bg-transparent"
+              >
+                <FolderPlus size={10} />
+              </button>
+              <button
+                type="button"
+                title="Rename"
+                aria-label="Rename selected resource"
+                disabled={!disk || !selectedEntry}
+                onClick={() =>
+                  selectedEntry && setEntryDialog({ mode: "rename", value: selectedEntry.path })
+                }
+                className="grid h-[18px] w-[18px] place-items-center text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-800 disabled:hover:bg-transparent"
+              >
+                <Pencil size={9} />
+              </button>
+              <button
+                type="button"
+                title="Delete"
+                aria-label="Delete selected resource"
+                disabled={!disk || !selectedEntry}
+                onClick={() => selectedEntry && setDeleteTarget(selectedEntry)}
+                className="grid h-[18px] w-[18px] place-items-center text-zinc-600 hover:bg-white/[0.05] hover:text-danger disabled:cursor-not-allowed disabled:text-zinc-800 disabled:hover:bg-transparent"
+              >
+                <Trash2 size={9} />
+              </button>
+            </div>
+            <div className="flex h-[20px] w-[150px] items-center gap-1 border border-line-soft bg-void px-1.5">
               <Search size={9} className="shrink-0 text-zinc-600" />
               <input
                 value={fileQuery}
@@ -477,32 +616,53 @@ export function ProjectManager() {
                     <span className="ml-auto text-[7.5px] text-zinc-700">{entries.length}</span>
                   </button>
                   {open
-                    ? entries.map((file) => (
-                        <button
-                          key={file.path}
-                          type="button"
-                          onClick={() => void selectFile(file)}
-                          onDoubleClick={() => {
-                            if (CODE_FILES.some((entry) => entry.path === file.path)) {
-                              enter(selected, file.path);
-                            } else {
-                              flash("res://" + file.path + " is inside the .acm but not in the editor catalogue");
-                            }
-                          }}
-                          className={cx(
-                            "flex h-[21px] w-full items-center gap-1.5 pl-8 pr-3 text-left font-mono text-[10px] transition-colors",
-                            activePath === file.path
-                              ? "bg-acid/[0.07] text-zinc-100"
-                              : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300",
-                          )}
-                        >
-                          <FileGlyph language={file.language} />
-                          <span className="truncate">{file.name}</span>
-                          <span className="ml-auto shrink-0 text-[7.5px] text-zinc-700">
-                            {formatSize(file.size)}
-                          </span>
-                        </button>
-                      ))
+                    ? entries.map((file) => {
+                        if (file.kind === "dir") {
+                          return (
+                            <button
+                              key={"dir:" + file.path}
+                              type="button"
+                              onClick={() => setSelectedEntry({ path: file.path, kind: "dir" })}
+                              className={cx(
+                                "flex h-[21px] w-full items-center gap-1.5 pl-8 pr-3 text-left font-mono text-[10px] transition-colors",
+                                selectedEntry?.path === file.path && selectedEntry.kind === "dir"
+                                  ? "bg-white/[0.05] text-zinc-100"
+                                  : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300",
+                              )}
+                            >
+                              <Folder size={11} className="text-zinc-600" />
+                              <span className="truncate">{file.name}</span>
+                              <span className="ml-auto shrink-0 text-[7.5px] text-zinc-700">empty</span>
+                            </button>
+                          );
+                        }
+                        return (
+                          <button
+                            key={file.path}
+                            type="button"
+                            onClick={() => void selectFile(file)}
+                            onDoubleClick={() => {
+                              if (CODE_FILES.some((entry) => entry.path === file.path)) {
+                                enter(selected, file.path);
+                              } else {
+                                flash("res://" + file.path + " is inside the .acm but not in the editor catalogue");
+                              }
+                            }}
+                            className={cx(
+                              "flex h-[21px] w-full items-center gap-1.5 pl-8 pr-3 text-left font-mono text-[10px] transition-colors",
+                              activePath === file.path
+                                ? "bg-acid/[0.07] text-zinc-100"
+                                : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300",
+                            )}
+                          >
+                            <FileGlyph language={file.language} />
+                            <span className="truncate">{file.name}</span>
+                            <span className="ml-auto shrink-0 text-[7.5px] text-zinc-700">
+                              {formatSize(file.size)}
+                            </span>
+                          </button>
+                        );
+                      })
                     : null}
                 </div>
               );
@@ -717,6 +877,140 @@ export function ProjectManager() {
                 >
                   <Plus size={10} />
                   {busy ? "Creating…" : "Create & open"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {entryDialog ? (
+        <div
+          className="fixed inset-0 z-[85] grid place-items-center bg-black/70 p-6"
+          onMouseDown={() => setEntryDialog(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="entry-dialog-title"
+            className="w-[340px] max-w-full border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-8 items-center justify-between border-b border-line px-2.5">
+              <span id="entry-dialog-title" className="text-[11px] font-semibold text-zinc-200">
+                {entryDialog.mode === "rename"
+                  ? "Rename resource"
+                  : entryDialog.mode === "dir"
+                    ? "New folder"
+                    : "New file"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEntryDialog(null)}
+                aria-label="Close resource dialog"
+                className="grid h-5 w-5 place-items-center text-zinc-500 hover:bg-elevated hover:text-zinc-200"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="space-y-2 p-3">
+              <label className="block">
+                <span className="label-caps text-zinc-500">
+                  {entryDialog.mode === "rename" ? "New path" : "Path inside the container"}
+                </span>
+                <input
+                  value={entryDialog.value}
+                  onChange={(event) =>
+                    setEntryDialog((current) =>
+                      current ? { ...current, value: event.target.value } : current,
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void submitEntry();
+                  }}
+                  placeholder={entryDialog.mode === "dir" ? "systems" : "scenes/NewScene.acid"}
+                  autoFocus
+                  spellCheck={false}
+                  className="mt-1 h-[26px] w-full border border-line bg-void px-2 font-mono text-[10.5px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-acid/50"
+                />
+              </label>
+              <p className="text-[9px] leading-relaxed text-zinc-600">
+                {entryDialog.mode === "rename"
+                  ? "Renaming a folder moves every resource inside it. The path must not already exist."
+                  : entryDialog.mode === "dir"
+                    ? "Folders are entries in the .acm container; an empty folder stays visible in this list."
+                    : "The file is written into the .acm container with starter content for known extensions."}
+              </p>
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEntryDialog(null)}
+                  className="flex h-[27px] flex-1 items-center justify-center border border-line text-[9.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitEntry()}
+                  disabled={!entryDialog.value.trim() || entryBusy}
+                  className="flex h-[27px] flex-1 items-center justify-center gap-1 border border-acid/40 bg-acid/[0.1] text-[9.5px] font-medium text-acid hover:bg-acid/[0.16] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-zinc-700"
+                >
+                  {entryBusy ? "Working…" : entryDialog.mode === "rename" ? "Rename" : "Create"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div
+          className="fixed inset-0 z-[85] grid place-items-center bg-black/70 p-6"
+          onMouseDown={() => setDeleteTarget(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+            className="w-[340px] max-w-full border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-8 items-center justify-between border-b border-line px-2.5">
+              <span id="delete-dialog-title" className="text-[11px] font-semibold text-zinc-200">
+                Delete {deleteTarget.kind === "dir" ? "folder" : "file"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                aria-label="Close delete dialog"
+                className="grid h-5 w-5 place-items-center text-zinc-500 hover:bg-elevated hover:text-zinc-200"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="space-y-2 p-3">
+              <p className="break-all font-mono text-[10px] text-zinc-300">res://{deleteTarget.path}</p>
+              <p className="text-[9px] leading-relaxed text-zinc-500">
+                {deleteTarget.kind === "dir"
+                  ? "The folder and everything inside it are removed from the container."
+                  : "The resource is removed from the container. This cannot be undone."}
+              </p>
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(null)}
+                  className="flex h-[27px] flex-1 items-center justify-center border border-line text-[9.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitDelete()}
+                  disabled={entryBusy}
+                  className="flex h-[27px] flex-1 items-center justify-center gap-1 border border-danger/40 bg-danger/[0.1] text-[9.5px] font-medium text-danger hover:bg-danger/[0.16] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-zinc-700"
+                >
+                  <Trash2 size={10} />
+                  {entryBusy ? "Deleting…" : "Delete"}
                 </button>
               </div>
             </div>

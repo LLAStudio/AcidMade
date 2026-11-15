@@ -19,6 +19,7 @@ export interface DiskProject {
 export interface ProjectFileInfo {
   path: string;
   name: string;
+  kind?: "file" | "dir";
   size: number;
   mtime?: string;
   language: string;
@@ -48,6 +49,13 @@ interface ProjectsBridge {
     relative: string,
     content: string,
   ): Promise<{ size: number; mtime: string }>;
+  createEntry(
+    projectPath: string,
+    relative: string,
+    kind: "file" | "dir",
+  ): Promise<{ path: string; kind: "file" | "dir" }>;
+  renameEntry(projectPath: string, from: string, to: string): Promise<{ path: string }>;
+  deleteEntry(projectPath: string, relative: string): Promise<{ path: string; removed?: number }>;
 }
 
 interface DesktopBridge {
@@ -204,4 +212,38 @@ export async function writeProjectFile(
     throw new Error("editing resources requires the desktop app");
   }
   return api.writeFile(project.path, relative, content);
+}
+
+function requireDisk(project: Project): { api: ProjectsBridge; path: string } {
+  const api = projectsBridge();
+  if (!api || !project.path) {
+    throw new Error("managing resources requires the desktop app");
+  }
+  return { api, path: project.path };
+}
+
+export async function createProjectEntry(
+  project: Project,
+  relative: string,
+  kind: "file" | "dir",
+): Promise<{ path: string; kind: "file" | "dir" }> {
+  const { api, path } = requireDisk(project);
+  return api.createEntry(path, relative, kind);
+}
+
+export async function renameProjectEntry(
+  project: Project,
+  from: string,
+  to: string,
+): Promise<{ path: string }> {
+  const { api, path } = requireDisk(project);
+  return api.renameEntry(path, from, to);
+}
+
+export async function deleteProjectEntry(
+  project: Project,
+  relative: string,
+): Promise<{ path: string; removed?: number }> {
+  const { api, path } = requireDisk(project);
+  return api.deleteEntry(path, relative);
 }

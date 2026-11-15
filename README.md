@@ -113,6 +113,9 @@ live under `Documents/AcidMade` (override with `ACIDMADE_PROJECTS_DIR`).
 - **Reveal** shows the `.acm` file in the system file manager.
 - **Read/write** selecting a resource reads its entry from the container; editing
   and `Ctrl`/`Cmd`+`S` rewrite the archive and bump the manifest timestamp.
+- **Manage** resources without leaving the app: new file, new folder, rename
+  (a file, or a folder with everything inside it) and delete, with starter content
+  for `.acid`, `.json`, `.prompt` and `.md`.
 
 Older folder projects (`acidmade.json` in a directory) still open. The container
 is a plain zip with stored entries, so an `.acm` can be inspected or repaired

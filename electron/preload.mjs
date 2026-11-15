@@ -20,5 +20,11 @@ contextBridge.exposeInMainWorld("acidmade", {
       ipcRenderer.invoke("acidmade:projects:read-file", { projectPath, relative }),
     writeFile: (projectPath, relative, content) =>
       ipcRenderer.invoke("acidmade:projects:write-file", { projectPath, relative, content }),
+    createEntry: (projectPath, relative, kind) =>
+      ipcRenderer.invoke("acidmade:projects:create-entry", { projectPath, relative, kind }),
+    renameEntry: (projectPath, from, to) =>
+      ipcRenderer.invoke("acidmade:projects:rename-entry", { projectPath, from, to }),
+    deleteEntry: (projectPath, relative) =>
+      ipcRenderer.invoke("acidmade:projects:delete-entry", { projectPath, relative }),
   },
 });
