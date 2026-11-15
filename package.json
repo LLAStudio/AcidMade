@@ -1,0 +1,46 @@
+{
+  "name": "acidmade",
+  "productName": "AcidMade",
+  "version": "0.9.2",
+  "private": true,
+  "type": "module",
+  "description": "AI-native application engine with a scene editor, signal graph, project manager and local agent runtime.",
+  "author": "LLAStudio",
+  "license": "MIT",
+  "homepage": "https://github.com/LLAStudio/AcidMade",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "runtime": "node server/index.mjs",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
+    "preview": "vite preview",
+    "desktop": "npm run build && electron .",
+    "desktop:dev": "ACIDMADE_DEV_URL=http://127.0.0.1:3000 electron .",
+    "icon": "node scripts/gen-icon.mjs",
+    "package": "npm run build && electron-builder --publish never",
+    "package:linux": "npm run build && electron-builder --linux --publish never",
+    "package:win": "npm run build && electron-builder --win --publish never",
+    "package:mac": "npm run build && electron-builder --mac --publish never",
+    "release": "npm run build && electron-builder --publish always"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "~5.7.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.0.7"
+  }
+}

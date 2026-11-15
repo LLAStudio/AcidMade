@@ -52,7 +52,7 @@ The editor and runtime communicate through the Vite proxy during development and
 
 ## Editor conventions
 
-- The UI is dense and desktop-first, modeled on Godot 4's editor density.
+- The UI is dense and desktop-first: five resizable docks, mono labels, compact controls, no decorative chrome.
 - Panels are resizable.
 - The main region switches between workspace modes.
 - The inspector edits node properties and overrides.

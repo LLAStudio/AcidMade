@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  linux:
+    name: Linux · AppImage + Flatpak
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.electronjs.Electron2.BaseApp//24.08
+      - run: npm run icon
+      - run: npm run build
+      - name: Package AppImage and Flatpak
+        run: npx electron-builder --linux AppImage flatpak --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          if-no-files-found: error
+          path: |
+            release/*.AppImage
+            release/*.flatpak
+
+  windows:
+    name: Windows · Setup, MSI, Portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run icon
+      - run: npm run build
+      - name: Package Windows targets
+        run: npx electron-builder --win nsis msi portable --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.msi
+
+  macos:
+    name: macOS · DMG + .app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run icon
+      - run: npm run build
+      - name: Package macOS targets
+        run: npx electron-builder --mac dmg zip dir --publish never
+      - name: Zip the .app bundles
+        run: |
+          cd release
+          for dir in mac mac-arm64; do
+            if [ -d "$dir/AcidMade.app" ]; then
+              ditto -c -k --sequesterRsrc --keepParent "$dir/AcidMade.app" "AcidMade-${dir#mac-}-app.zip"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*-app.zip
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: AcidMade ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/**/*

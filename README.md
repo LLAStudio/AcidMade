@@ -1,270 +1,237 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="98" height="20"><linearGradient id="g" x2="0" y2="1"><stop offset="0" stop-color="#ccff00"/><stop offset="1" stop-color="#9ad500"/></linearGradient><rect x="0" y="0" width="98" height="20" rx="4" fill="url(#g)"/><path d="M0 10.5 A10 10 0 0 1 20 10.5 H98 V9.5 A10 10 0 0 1 78 9.5 H98 V10.5 A10 10 0 0 1 98 10.5 Z" fill="#0a0c04"/><text x="16" y="14.4" fill="#0a0c04" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11" font-weight="700">acid/1.0</text></svg> build — snapshots, not releases
-
 # AcidMade
 
-A Godot-4-fidelity, AI-native application engine built in React, TypeScript and Tailwind, with a local tool-executing agent runtime and provider-agnostic AI agents.
+[![license](https://img.shields.io/badge/license-MIT-ccff00)](LICENSE)
+[![platforms](https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-ccff00)](https://github.com/LLAStudio/AcidMade/releases/latest)
+[![build](https://img.shields.io/badge/build-snapshots%2C%20not%20releases-9a9a9a)](.github/workflows/release.yml)
+[![stack](https://img.shields.io/badge/react%2018%20%C2%B7%20typescript%20%C2%B7%20tailwind%204-1f1f1f)](package.json)
 
-AcidMade is a scene editor first. The document you are reading is the full project reference; see [The documentation](#the-documentation) for the docs console and the individual doc files.
+**An AI-native application engine.** Build an app as a tree of typed scene
+nodes, wire behaviour with signals, and let provider-agnostic agents inspect,
+explain and stage changes to the same scene you are editing.
 
-## Why
+AcidMade is a desktop editor first: five resizable docks, a live composited
+viewport, an inspector with overrides, and a local tool-executing runtime that
+compiles, validates and explains what it finds.
 
-Most web apps hide their structure behind abstraction layers. AcidMade puts the structure on the desk: nodes, scenes and signals at one scale, agents and provider chat at another, and a local runtime that can inspect, build and patch the same scene the editor shows. The UI is deliberately dense and desktop-first, modeled on Godot 4's editor density rather than web convention.
+![AcidMade editor — viewport, scene tree, inspector and output dock](docs/screenshots/editor-viewport.png)
 
-![AcidMade editor — viewport, scene tree, inspector and output dock](qa-final-1440.png)
+## Contents
 
-![AcidMade editor — agent hub, script tab and inspector](qa-agents-1024-fixed.png)
+- [Why AcidMade](#why-acidmade)
+- [Screenshots](#screenshots)
+- [Download](#download)
+- [Project & file manager](#project--file-manager)
+- [What is in the editor](#what-is-in-the-editor)
+- [Powering the AI panel](#powering-the-ai-panel)
+- [Run from source](#run-from-source)
+- [Build the desktop installers](#build-the-desktop-installers)
+- [How it is put together](#how-it-is-put-together)
+- [Commands](#commands)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
-## What it is
+## Why AcidMade
 
-- **Scene editor:** a five-dock workspace — scene tree, file system, viewports/scripts/signals/agents, inspector and bottom output panel — with resizable panes, a zoomable viewport, and a live agent overlay during runs.
-- **Acid scene format:** `acid/1.0` scenes live as JSON resources and describe an application as a tree of typed nodes with attached script resources and signal definitions.
-- **Node, scene and signal architecture:** nodes have kinds (`root`, `ui`, `component`, `api`, `data`, `agent`), classes, icons, status, visibility, attached scripts, and signals with typed connections.
-- **Local agent runtime:** a Node runtime in `server/index.mjs` exposes `/api/runtime`, run endpoints, pause/resume/stop, and SSE event streaming. Tools include filesystem access, esbuild transforms, tsc noEmit type checks, gzip packaging, and a local-reference planner.
-- **Provider-agnostic AI:** the Acid AI panel connects an OpenAI-compatible, Anthropic or local Ollama provider and uses the scene context, diagnostics and node configuration in its prompt. Image and text attachments are supported.
-- **Staged scene changes:** the provider can stage a single create, rename or configure action; the editor shows a confirmation card and nothing touches the scene until the operator confirms.
-- **Local persistence:** added nodes, inspector overrides and the tab/mode/selection session survive a reload through a versioned, validated localStorage snapshot. Project → Reset Project to Defaults restores the built-in scene, overrides, and saved workspace.
+Most application builders hide structure behind layers of abstraction. AcidMade
+puts the structure on the desk:
 
-## Where it runs
+- **Nodes are the application.** Every screen, component, endpoint, data source
+  and agent is a node in one tree.
+- **Signals are the wiring.** A signal connection names the node method it
+  invokes, so intent is readable without tracing call sites.
+- **The editor is the runtime's twin.** The same scene graph the UI shows is the
+  one the local runtime validates, builds and patches.
+- **AI proposes, you confirm.** A provider can stage one scene change at a time.
+  Nothing touches the scene until the operator accepts the confirmation card.
 
-This is a local/browser project right now:
+The interface is deliberately dense and desktop-first: compact mono labels, real
+resizable docks, keyboard-driven workspaces, no decorative chrome.
 
-- **Frontend:** React app served by Vite on port 3000.
-- **Runtime:** a Node process on port 4317 that proxies AI calls and manages runs.
-- **Development:** `npm run dev` starts both processes together through `scripts/dev.mjs`.
-- **Build:** `npm run build` runs `tsc -b && vite build`.
+## Screenshots
 
-No public hosted backend is wired in yet. If you add one later, the runtime and AI chat paths are the natural place to start, not the editor shell.
+**Agent hub** — super-agents, their models, memory scope and wired signals.
 
-## Run it locally
+![AcidMade agent hub with two super-agents and the inspector](docs/screenshots/editor-agent-hub.png)
 
-Requirements:
+**Compact layout** — the same workspace at 1280 px, with the file system dock and
+inspector still usable.
 
-- Node.js. This repository ships its own lockfile; keep it.
-- A provider key only if you want the Acid AI panel to reach OpenAI or Anthropic. Ollama runs locally with no key.
+![AcidMade editor in a compact window layout](docs/screenshots/editor-compact.png)
 
-Steps:
+## Download
+
+Installers are produced by the release workflow and attached to
+[the latest release](https://github.com/LLAStudio/AcidMade/releases/latest).
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows | `AcidMade-<version>-Setup.exe` | Installer with Start menu and desktop shortcuts |
+| Windows | `AcidMade-<version>-<arch>.msi` | For managed / group-policy installs |
+| Windows | `AcidMade-<version>-Portable.exe` | Single file, no installation |
+| macOS | `AcidMade-<version>-<arch>.dmg` | Drag to Applications |
+| macOS | `AcidMade-<arch>-app.zip` | Raw `AcidMade.app` bundle |
+| Linux | `AcidMade-<version>-<arch>.AppImage` | `chmod +x` and run |
+| Linux | `AcidMade-<version>-<arch>.flatpak` | `flatpak install AcidMade-*.flatpak` |
+
+Builds are unsigned, so Windows SmartScreen and macOS Gatekeeper warn on first
+launch. See [desktop-packaging.md](docs/desktop-packaging.md) for signing.
+
+## Project & file manager
+
+Opening AcidMade lands on the project manager, not straight in the editor. It is
+the entry point for choosing what you work on and for browsing the resources a
+project contains.
+
+![AcidMade project and file manager](docs/screenshots/project-manager.png)
+
+- **Project list** — every local project with its branch, environment and path.
+  Search filters by name, branch, slug or environment; double-click opens.
+- **New project** — name it, pick a template (analytics dashboard, agent
+  workspace or blank scene) and it opens immediately.
+- **Resource browser** — the `res://` tree grouped by folder, with a filter and
+  per-file inspector showing language, origin, change counts and a content
+  preview.
+- **Open in editor** — opens the selected project, or jumps straight to a
+  specific resource in the script workspace.
+
+Created projects and the last opened project survive a reload through
+`acidmade.launcher.v1`. Return to the manager at any time from
+**Project → Projects & Files**.
+
+## What is in the editor
+
+- **Scene tree** — hierarchy with expand/collapse, visibility toggles and status.
+- **File system** — `res://` resources with search and folder groups.
+- **Viewport** — composited preview with zoom, device frame, grid, agent overlay
+  and selection annotations.
+- **Script** — the active resource with syntax styling and change markers.
+- **Signal graph** — nodes and their connections as a wiring diagram.
+- **Agent hub** — agents with model, memory scope, autonomy, wired signals and
+  runtime state.
+- **Inspector** — property editor with per-node overrides and a reset action.
+- **Bottom dock** — output, stream, debugger, build and terminal tabs.
+- **Command palette** — `⌘K` / `Ctrl+K` for everything above.
+
+Keyboard: `F5` run, `F6` pause/resume agents, `F7` stop, `Q`/`W`/`E` viewport
+tools.
+
+## Powering the AI panel
+
+The Acid AI panel talks to a provider through the local runtime, never from the
+browser with your key exposed in the URL.
+
+| Provider | Endpoint | Key |
+| --- | --- | --- |
+| OpenAI / compatible | any `/chat/completions` | required |
+| Anthropic | Messages API | required |
+| Ollama | local daemon | not required |
+
+Keys are held in memory by the runtime process and are never written to disk or
+localStorage. Attachments support up to four items per message: images up to
+2 MB and text files up to 512 KB.
+
+What the provider receives: current project and branch, selected node, active
+resource, the first five diagnostics, recent engine log lines, the trimmed scene
+tree, available classes and the selected node's effective configuration.
+
+What it can do: inspect, explain, draft agent prompts and stage a single
+create/rename/configure action for confirmation. It cannot apply changes itself.
+
+## Run from source
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the Vite preview. The editor starts on the default scene with the DataAnalystAgent script tab active and the bottom output panel open.
+That starts the Vite dev server on `:3000` and the runtime on `:4317`. Open the
+printed URL. If you only need the frontend, `npm run dev:web` starts Vite alone
+and the editor falls back to the reference runtime stream.
 
-If you only want the frontend for a quick check, `npm run dev:web` starts Vite alone. The editor will fall back to the reference runtime stream until the runtime process comes back.
+To run the desktop shell:
 
-## The documentation
+```bash
+npm run desktop:dev      # Electron window against the dev server
+npm run desktop          # build the renderer, then open the desktop window
+```
 
-The README is the front door. The deeper documentation lives in `docs/` and can be read in two ways:
+## Build the desktop installers
 
-- In the editor, open **Help → Engine Documentation**. The documentation console renders the doc files in-dock so the reference is available while you work.
-- On disk, read `docs/` directly or regenerate the README's badge and build-status placeholders from the scripts in `scripts/`.
+```bash
+npm run icon             # generate build/icon.png and build/icons/*
+npm run package          # every target configured for this platform
+npm run package:linux    # AppImage + Flatpak
+npm run package:win      # Setup.exe + MSI + portable .exe
+npm run package:mac      # DMG + zip (and the .app bundle)
+```
 
-Doc files:
+Artifacts are written to `release/`. Windows targets build on Windows, macOS
+targets need macOS, and Flatpak needs `flatpak-builder` plus the runtimes listed
+in [desktop-packaging.md](docs/desktop-packaging.md). The release workflow does
+all of it on native runners and publishes a GitHub release when a `v*` tag is
+pushed.
 
-- [acidmade-engine.md](docs/acidmade-engine.md) — the engine reference: scene graph, nodes, signals, inspector, viewports, scripting, agent runtime, persistence, project and build semantics.
-- [ai-provider-setup.md](docs/ai-provider-setup.md) — connecting an AI provider, BYOK behavior, attachments, staged scene actions, and the runtime proxy.
-- [file-system-and-resources.md](docs/file-system-and-resources.md) — res:// resources, the file system dock, code file groups, preview compositing, and how resources become scene scripts.
-- [contributing-and-architecture.md](docs/contributing-and-architecture.md) — architecture map, editors and commands, test approach, and the contribution agreement.
+## How it is put together
 
-## Architecture & scene tree
+```
+electron/           main process, preload bridge
+server/             local agent runtime, AI proxy, tools
+src/components/     editor docks, panels, project manager
+src/data/           scene tree, resources, projects, build script
+src/lib/            persistence, runtime client, AI client, launcher
+src/state/          EngineContext reducer and actions
+docs/               the long-form documentation
+scripts/            dev launcher, icon generation
+```
 
-AcidMade models an application as a tree of scene nodes.
-
-The default scene, `res://scenes/MainApp.acid`, is the root. It owns the workspace lifecycle and emits `on_ready`, which connects to `WorkspaceShell.mount`.
-
-Under the root:
-
-- **AuthGate** — a route guard. It emits `on_user_login`, which routes to `AuthSuperAgent.grantSession`.
-- **AuthSuperAgent** — an autonomous identity agent. It emits `session_granted` back to `AuthGate.unlock`, and `auth_error` to `DataAnalystAgent.recoverAuth`.
-- **WorkspaceShell** — the primary layout container. It emits `on_mount`, which routes to `DashboardPage.mount`.
-- **DashboardPage** — the primary analytics view. It emits `on_scene_ready` back to `WorkspaceShell.markReady`, and `on_build_error` to `DataAnalystAgent.selfHeal`.
-  - **TopNavbar** — the global command bar.
-  - **MetricsGrid** — the KPI widget grid.
-  - **LiveFeedAPI** — the streaming edge endpoint. It emits `on_data_fetched` to `MetricsGrid.update`, and `on_stream_error` to `DataAnalystAgent.reconnect`.
-  - **DataAnalystAgent** — the autonomous analytics worker. It emits `on_run_dispatched` to `LiveFeedAPI.subscribe`, and `heal_complete` to `DashboardPage.refresh`.
-
-Node kinds:
-
-- `root` — application or scene roots.
-- `ui` — layout containers and screens.
-- `component` — reusable UI pieces.
-- `api` — endpoints and edge services.
-- `data` — data layer nodes.
-- `agent` — autonomous or assisted agents.
-
-Every node has an attached script resource, an icon key, a status, and a visibility flag. Signal definitions carry a name, argument signature, description, and typed connections to another node's method.
-
-## Signal graph
-
-Signals are the wiring layer. Each signal has a name and a list of connections of the form `{ nodeId, method }`. The editor shows signals on each node, and the **Signal Graph** workspace visualizes connections across the tree.
-
-Signal discipline in this project:
-
-- Signals describe intent, not implementation. A connection says which node method is invoked when a signal fires.
-- The editor and runtime treat signals as typed wiring. The provider only wires them through staged actions after confirmation.
-- Diagnostics can mention signal wiring. The AI context surface includes the first five open problems so the provider can reason about build errors alongside the scene.
-
-## Agent runtime
-
-The runtime is a local Node process. Its public surface:
-
-- `GET /api/runtime` — runtime description.
-- `POST /api/runs` — start a build or deploy run.
-- `GET /api/runs/:id/events` — SSE stream of run events.
-- `POST /api/runs/:id/pause|resume` — pause or resume a run.
-- `POST /api/runs/:id/stop` — stop a run.
-- `GET /api/runs/:id` — run snapshot.
-
-Tools available to the runtime:
-
-- Filesystem read/write scoped to `res://` resources.
-- esbuild transforms for view modules.
-- `tsc --noEmit` for scene validation.
-- signal wiring helpers.
-- gzip packaging for build artifacts.
-
-Planner: `local-reference`. This is the project's current execution-planning layer.
-
-## Provider-agnostic AI
-
-The Acid AI panel supports three providers:
-
-- **OpenAI / compatible** — any `/chat/completions` endpoint.
-- **Anthropic** — native Messages API.
-- **Ollama** — local, no key required.
-
-What the provider sees:
-
-- The current project and branch.
-- The selected node, with class, kind and id.
-- The active resource.
-- Open diagnostics, trimmed to the first five.
-- Recent engine log lines.
-- The active scene tree, id/name/class/kind/parent, trimmed.
-- Available classes.
-- Editable keys by kind.
-- The selected node's effective configuration, including overrides.
-
-What the provider can do:
-
-- Inspect nodes, signals and diagnostics.
-- Draft agent prompts.
-- Stage one scene change at a time — create, rename or configure.
-- It cannot apply a change itself. The editor stages the action, shows a confirmation card, and applies it only when the operator confirms.
-
-Attachments:
-
-- Up to four per message.
-- Images up to 2 MB each.
-- Text-like files up to 512 KB each.
-- The provider proxy forwards images and text to the chosen provider. Keys are held in memory, not written to disk or localStorage.
-
-## Build pipeline
-
-The editor has a separate build identity from the runtime:
-
-- **Build artifact:** `dist/` output from Vite, plus TypeScript compilation of the app. The project's build status headline is "snapshots, not releases" because the current artifact is an editor build, not a public release.
-- **Deploy:** the Export action stages a production build path. In this project it is wired as a menu action and a runtime run kind; the runtime treat deploy and build as separate run kinds.
-- **Validation:** scene validation can run through `tsc --noEmit`. The provider and runtime both know the project's typecheck tool.
-
-Commands:
-
-- `npm run dev` — run the full local stack.
-- `npm run dev:web` — run the frontend only.
-- `npm run build` — type-check and bundle.
-- `npm run typecheck` — type-check only.
-- `npm run preview` — preview the built frontend.
-
-## Local project
-
-The editor ships with one built-in local project and a small project switcher:
-
-- **Northwind Analytics** — the default workspace, on branch `main`, environment Preview.
-- **Flux Console** — a second project sample, on `feat/agent-mesh`, environment Staging.
-- **AcidMade Core** — the engine's own local project entry.
-
-Project switching changes the context the provider and runtime see. Scene persistence is per browser, not per project file.
-
-## Interface
-
-The editor is dense by design. The main chrome:
-
-- **EngineBar** — project name, scene/project/build/agents/editor/help menus, workspace mode toggles, and the play/pause/stop/run/export controls.
-- **Scene tree dock** — the hierarchy with expand/collapse and selection.
-- **File system dock** — `res://` file browser with search, grouped by folder.
-- **Tabs** — scene/script/signal/agent tabs across the top of the main region.
-- **Viewport** — the live composited preview with zoom, device frame, grid, agent overlay and selection annotations.
-- **Script view** — the active script resource.
-- **Signal graph** — connection visualization.
-- **Agent hub** — agent-oriented workspace.
-- **Inspector** — property editor with overrides.
-- **Bottom dock** — output and a few secondary tabs.
-
-Keyboard:
-
-- `F5` — play/build & run.
-- `F6` — pause/resume agents.
-- `F7` — stop execution.
-- `⌘K` / `Ctrl+K` — command palette.
-- `Q/W/E` — viewport select/move/resize tools.
-
-## Persistence
-
-Added nodes and inspector overrides survive a reload through a versioned localStorage snapshot keyed `acidmade.workspace.v1`. The snapshot stores the scene tree, overrides, closed tab ids, active file id, mode, selected node, and expanded tree state.
-
-Validation:
-
-- The tree is sanitized on load: node kinds, icon keys, ids, names, classes, file/script paths, signals and children are validated; status returns to `idle`.
-- Overrides are validated against the loaded tree's node ids and keys.
-- Malformed or version-mismatched snapshots fall back to the default scene.
-
-Reset:
-
-- **Project → Reset Project to Defaults** restores the built-in scene tree, clears every override, restores the default tabs, resets the mode and selection, and clears the saved workspace for the browser.
-- The reset action is disabled while a build or deploy is active.
-
-## Project conventions
-
-- **One home per responsibility.** The source tree is split by layer: components, data, lib, state, server, and scripts. Runtime code lives under `server/`, editor code under `src/`, and project glue under `scripts/`.
-- **Resources are the contract.** `res://` paths are the shared names for scenes, scripts, agents, components and config. The file system dock and the provider context both use them.
-- **Status is visible.** Node status and run status are shown in the UI, not buried in logs.
-- **AI is a copilot, not the executor.** The provider proposes; the editor applies after confirmation.
-- **Local first.** The project is a local editor and runtime pair. Hosting, accounts and public deployment are separate concerns and are not wired in here yet.
-
-## Configuration
-
-Right now the only persisted user config is the provider identity in the Acid AI panel: provider id, base URL and model. API keys are held in memory only. The workspace snapshot is separate and stores editor session state only.
+- **Scene format** — `acid/1.0`, a JSON resource describing a node tree, scripts,
+  signals and theme tokens.
+- **Node kinds** — `root`, `ui`, `component`, `api`, `data`, `agent`.
+- **Runtime API** — `GET /api/runtime`, `POST /api/runs`,
+  `GET /api/runs/:id/events` (SSE), pause/resume/stop, `GET /api/runs/:id`.
+- **Tools** — scoped filesystem writes, esbuild transforms, `tsc --noEmit`
+  validation, signal helpers, gzip packaging.
+- **Persistence** — `acidmade.workspace.v1` stores the tree, overrides, tabs,
+  mode, selection and expanded state. Malformed snapshots fall back to defaults.
+  `Project → Reset Project to Defaults` clears it.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Start the frontend and the local runtime together. |
-| `npm run dev:web` | Start the frontend only. |
-| `npm run build` | Type-check and bundle the frontend. |
-| `npm run typecheck` | Type-check only. |
-| `npm run preview` | Preview the built frontend. |
+| `npm run dev` | Vite + runtime together |
+| `npm run dev:web` | Vite only |
+| `npm run runtime` | Runtime only |
+| `npm run build` | `tsc -b && vite build` |
+| `npm run typecheck` | Type check |
+| `npm run desktop` | Build, then open the Electron window |
+| `npm run desktop:dev` | Electron against the dev server |
+| `npm run icon` | Regenerate the app icon set |
+| `npm run package` | Package the current platform |
+| `npm run release` | Package and publish through Electron Builder |
 
-## Status
+## Documentation
 
-Local editor and runtime, provider chat and staged scene actions working, persistence and reset working. Not a hosted product yet.
+- [acidmade-engine.md](docs/acidmade-engine.md) — scene graph, nodes, signals,
+  inspector, viewports, scripting, runtime, persistence, build semantics.
+- [ai-provider-setup.md](docs/ai-provider-setup.md) — providers, BYOK, attachments,
+  staged scene actions, runtime proxy.
+- [file-system-and-resources.md](docs/file-system-and-resources.md) — `res://`,
+  the file dock, code groups, preview compositing.
+- [desktop-packaging.md](docs/desktop-packaging.md) — installers, host
+  requirements, Flatpak runtimes, signing, release flow.
+- [contributing-and-architecture.md](docs/contributing-and-architecture.md) —
+  architecture map, conventions, contribution agreement.
 
-## The documentation
-
-The editor can show the documentation in-dock from **Help → Engine Documentation**. The same files live in `docs/` on disk. Regenerate the README badge and build-status placeholders with the scripts in `scripts/` if you edit the source.
+The editor also renders these in-dock from **Help → Engine Documentation**.
 
 ## Contributing
 
-See [contributing-and-architecture.md](docs/contributing-and-architecture.md).
-
-The short version: keep the UI dense and desktop-first, keep the scene format honest, keep AI as a staging layer, and do not merge a change that breaks the build or the default-scene contract without updating the docs and the README's tracked placeholders.
+Keep the UI dense and desktop-first, keep the scene format honest, keep AI as a
+staging layer, and do not merge a change that breaks the build or the
+default-scene contract without updating the docs.
 
 ## License
 
-This project does not have a LICENSE file yet. If you plan to share it, add one before you do.
-
-## Acknowledgments
-
-- Godot 4, for the editor-density and dock mental model this UI is explicitly trying to match.
-- The surrounding open-source React, TypeScript and Tailwind tooling this project is built on.
+[MIT](LICENSE) © 2026 LLAStudio

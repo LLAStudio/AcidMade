@@ -1,0 +1,132 @@
+appId: com.acidmade.app
+productName: AcidMade
+copyright: Copyright © 2026 LLAStudio
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - server/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,LICENSE,license}"
+  - "!**/node_modules/.bin"
+
+extraResources:
+  - from: docs
+    to: docs
+  - from: README.md
+    to: README.md
+  - from: LICENSE
+    to: LICENSE
+
+asarUnpack:
+  - server/**/*
+  - node_modules/esbuild/**/*
+  - node_modules/@esbuild/**/*
+  - node_modules/typescript/**/*
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: msi
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  artifactName: AcidMade-${version}-Setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: AcidMade
+  uninstallDisplayName: AcidMade ${version}
+
+msi:
+  artifactName: AcidMade-${version}-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AcidMade
+
+portable:
+  artifactName: AcidMade-${version}-Portable.${ext}
+  requestExecutionLevel: user
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  identity: null
+
+dmg:
+  artifactName: AcidMade-${version}-${arch}.${ext}
+  title: AcidMade ${version}
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 190
+      type: file
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
+
+linux:
+  icon: build/icons
+  category: Development
+  executableName: acidmade
+  synopsis: AI-native application engine
+  description: >
+    AcidMade is an AI-native application engine with a scene editor, a signal
+    graph, a local tool-executing agent runtime and provider-agnostic AI agents.
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: flatpak
+      arch: [x64]
+  desktop:
+    entry:
+      StartupWMClass: AcidMade
+
+appImage:
+  artifactName: AcidMade-${version}-${arch}.${ext}
+
+flatpak:
+  artifactName: AcidMade-${version}-${arch}.${ext}
+  runtime: org.freedesktop.Platform
+  runtimeVersion: "24.08"
+  sdk: org.freedesktop.Sdk
+  base: org.electronjs.Electron2.BaseApp
+  baseVersion: "24.08"
+  finishArgs:
+    - --share=ipc
+    - --socket=x11
+    - --socket=wayland
+    - --socket=pulseaudio
+    - --share=network
+    - --device=dri
+    - --filesystem=home
+
+publish:
+  provider: github
+  owner: LLAStudio
+  repo: AcidMade
+  releaseType: release
