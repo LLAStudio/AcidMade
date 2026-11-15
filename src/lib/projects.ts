@@ -151,7 +151,7 @@ export async function createProjectOnDisk(input: CreateProjectInput): Promise<Pr
   };
 }
 
-export async function openProjectFolder(): Promise<Project | null> {
+export async function openProjectFile(): Promise<Project | null> {
   const api = projectsBridge();
   if (!api) return null;
   const record = await api.openDialog();

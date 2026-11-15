@@ -101,7 +101,7 @@ export function StatusBar() {
           className="flex items-center gap-1 text-zinc-700 hover:text-zinc-300"
         >
           <PanelBottom size={9} />
-          <span className="hidden 2xl:inline">1.0.1</span>
+          <span className="hidden 2xl:inline">1.0.2</span>
         </button>
       </span>
     </div>

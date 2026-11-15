@@ -99,16 +99,21 @@ project contains.
 - **Open in editor** — opens the selected project, or jumps straight to a
   specific resource in the script workspace.
 
-The desktop app works on real folders. Projects live under `Documents/AcidMade`
-(override with `ACIDMADE_PROJECTS_DIR`); each one is a directory with an
-`acidmade.json` manifest plus its `scenes/`, `agents/` and other resources.
+A project is one **`.acm` file**: a container holding `acidmade.json` (the
+manifest) plus every resource — scenes, scripts, prompts and config. Projects
+live under `Documents/AcidMade` (override with `ACIDMADE_PROJECTS_DIR`).
 
-- **Create** writes the folder, the manifest, a starter scene and a README.
-- **Open folder…** registers any existing directory and adds a manifest if it has
-  none.
-- **Reveal** opens the folder in the system file manager.
-- **Read/write** selecting a file reads it from disk; editing and `Ctrl`/`Cmd`+`S`
-  write it back and bump the manifest timestamp.
+- **Create** writes `<slug>.acm` with the manifest, a starter scene, config and a
+  README inside the container.
+- **Open project…** picks an existing `.acm` file; archives without a manifest get
+  one added on open.
+- **Reveal** shows the `.acm` file in the system file manager.
+- **Read/write** selecting a resource reads its entry from the container; editing
+  and `Ctrl`/`Cmd`+`S` rewrite the archive and bump the manifest timestamp.
+
+Older folder projects (`acidmade.json` in a directory) still open. The container
+is a plain zip with stored entries, so an `.acm` can be inspected or repaired
+with ordinary archive tools.
 
 All of that goes through a narrow IPC bridge (`electron/preload.mjs`); the
 renderer never touches `fs` directly and every path is resolved and checked to

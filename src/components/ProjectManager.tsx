@@ -26,7 +26,7 @@ import { PROJECT_TEMPLATES, type Project } from "../data/projects";
 import {
   isDiskBacked,
   listProjects,
-  openProjectFolder,
+  openProjectFile,
   projectFiles,
   readProjectFile,
   revealProject,
@@ -195,12 +195,12 @@ export function ProjectManager() {
 
   const openFolder = async () => {
     if (!disk) {
-      flash("Opening a folder requires the desktop app");
+      flash("Opening a .acm project requires the desktop app");
       return;
     }
     setBusy(true);
     try {
-      const opened = await openProjectFolder();
+      const opened = await openProjectFile();
       if (opened) {
         refreshProjects();
         setSelectedId(opened.id);
@@ -270,7 +270,7 @@ export function ProjectManager() {
           className="flex h-[26px] items-center gap-1.5 border border-line bg-panel px-2 text-[10.5px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:text-zinc-700"
         >
           <FolderSearch size={11} />
-          Open folder
+          Open project
         </button>
         <button
           type="button"
@@ -296,7 +296,7 @@ export function ProjectManager() {
             <span className="label-caps text-zinc-400">Projects</span>
             <span className="font-mono text-[8px] text-zinc-700">{projects.length}</span>
             <span className="ml-auto font-mono text-[8px] text-zinc-700">
-              {disk ? "disk" : "preview"}
+              {disk ? ".acm" : "preview"}
             </span>
           </div>
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto py-1">
@@ -394,7 +394,7 @@ export function ProjectManager() {
                       if (!ok) flash("Reveal requires the desktop app");
                     });
                   }}
-                  title="Reveal folder on disk"
+                  title="Reveal project file"
                   className="flex h-[26px] items-center gap-1.5 border border-line px-2 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
                 >
                   <SquareArrowOutUpRight size={11} />
@@ -433,7 +433,7 @@ export function ProjectManager() {
 
           <div className="flex h-[27px] shrink-0 items-center gap-1.5 border-b border-line bg-panel px-2">
             <span className="label-caps text-zinc-400">Files</span>
-            <span className="font-mono text-[8px] text-zinc-700">{disk ? "disk" : "catalogue"}</span>
+            <span className="font-mono text-[8px] text-zinc-700">{disk ? ".acm" : "catalogue"}</span>
             {filesLoading ? (
               <span className="font-mono text-[8.5px] text-zinc-600">reading…</span>
             ) : null}
@@ -452,7 +452,7 @@ export function ProjectManager() {
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto py-1">
             {folders.length === 0 && !filesLoading ? (
               <p className="px-4 py-6 text-[10px] leading-relaxed text-zinc-600">
-                This project folder is empty. Create a scene or write a file from the inspector.
+                This project container is empty. Create a scene or write a file from the inspector.
               </p>
             ) : null}
             {folders.map(([folder, entries]) => {
@@ -486,7 +486,7 @@ export function ProjectManager() {
                             if (CODE_FILES.some((entry) => entry.path === file.path)) {
                               enter(selected, file.path);
                             } else {
-                              flash("res://" + file.path + " is on disk but not in the editor catalogue");
+                              flash("res://" + file.path + " is inside the .acm but not in the editor catalogue");
                             }
                           }}
                           className={cx(
@@ -584,11 +584,11 @@ export function ProjectManager() {
           ) : (
             <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
               <p className="text-[10px] leading-relaxed text-zinc-600">
-                Select a file to read it from disk. The desktop build writes it back when you save;
-                the browser preview is read-only.
+                Select a file to read it from the .acm container. The desktop build writes it back
+                when you save; the browser preview is read-only.
               </p>
               <div className="mt-3 border border-line-soft p-2">
-                <div className="label-caps mb-1 text-zinc-500">Folder</div>
+                <div className="label-caps mb-1 text-zinc-500">Project file</div>
                 <div className="break-all font-mono text-[9px] text-zinc-500">
                   {selected?.path ?? "~/AcidMade"}
                 </div>

@@ -1,14 +1,18 @@
 /**
- * On-disk project store.
+ * Project store for the Electron main process.
  *
- * Deliberately free of Electron imports so it can be tested with plain Node.
- * Every path that comes from the renderer is resolved and checked to stay
- * inside the project directory.
+ * A project is a single `.acm` file: a zip container with `acidmade.json` and
+ * every resource. Existing folder projects (a directory with `acidmade.json`)
+ * are still readable, so nothing created by an older build breaks.
+ *
+ * No Electron imports here, so the whole thing is testable with plain Node.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readAcm, text as acmText, writeAcm } from "./acm.mjs";
 
 const MANIFEST = "acidmade.json";
+const EXTENSION = ".acm";
 const SKIP_DIRS = new Set(["node_modules", ".git", ".idea", ".vscode", "dist", "release", ".cache"]);
 const MAX_READ = 2 * 1024 * 1024;
 
@@ -122,16 +126,13 @@ function templateMeta(template) {
   };
 }
 
-function manifestDefaults(directoryName, template = "dashboard") {
+function manifestDefaults(name, template = "dashboard") {
   const meta = templateMeta(template);
   const now = new Date().toISOString();
   return {
-    name: directoryName
-      .split(/[-_]/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" "),
-    slug: slugify(directoryName),
+    format: "acm/1.0",
+    name,
+    slug: slugify(name),
     branch: "main",
     environment: "Local",
     scene: meta.scene,
@@ -142,44 +143,25 @@ function manifestDefaults(directoryName, template = "dashboard") {
   };
 }
 
-async function readManifest(directory) {
+function parseManifest(raw) {
   try {
-    const raw = await fs.readFile(path.join(directory, MANIFEST), "utf8");
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return parsed;
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
     return null;
   }
 }
 
-async function writeJson(file, value) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify(value, null, 2) + "\n", "utf8");
+async function fileExists(target) {
+  try {
+    await fs.access(target);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-async function toRecord(directory, manifest) {
-  const stats = await fs.stat(directory);
-  const fallback = manifestDefaults(path.basename(directory));
-  const merged = { ...fallback, ...(manifest ?? {}) };
-  const count = await countFiles(directory);
-  return {
-    id: merged.slug || slugify(path.basename(directory)),
-    name: merged.name,
-    slug: merged.slug || slugify(path.basename(directory)),
-    branch: merged.branch ?? "main",
-    environment: merged.environment ?? "Local",
-    path: directory,
-    scene: merged.scene ?? "res://scenes/MainApp.acid",
-    template: merged.template ?? "Blank scene",
-    summary: merged.summary ?? "",
-    createdAt: merged.createdAt ?? stats.birthtime.toISOString(),
-    updatedAt: merged.updatedAt ?? stats.mtime.toISOString(),
-    fileCount: count,
-  };
-}
-
-async function countFiles(directory, depth = 0) {
+async function countFolderFiles(directory, depth = 0) {
   if (depth > 4) return 0;
   let total = 0;
   let entries = [];
@@ -190,10 +172,50 @@ async function countFiles(directory, depth = 0) {
   }
   for (const entry of entries) {
     if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
-    if (entry.isDirectory()) total += await countFiles(path.join(directory, entry.name), depth + 1);
+    if (entry.isDirectory()) total += await countFolderFiles(path.join(directory, entry.name), depth + 1);
     else total += 1;
   }
   return total;
+}
+
+async function folderFiles(directory, prefix = "", depth = 0, out = []) {
+  if (depth > 6) return out;
+  let entries = [];
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+    const relative = prefix ? prefix + "/" + entry.name : entry.name;
+    if (entry.isDirectory()) {
+      await folderFiles(path.join(directory, entry.name), relative, depth + 1, out);
+      continue;
+    }
+    const stats = await fs.stat(path.join(directory, entry.name)).catch(() => null);
+    if (!stats) continue;
+    out.push({
+      path: relative,
+      name: entry.name,
+      size: stats.size,
+      mtime: stats.mtime.toISOString(),
+      language: languageOf(entry.name),
+    });
+  }
+  return out;
+}
+
+function archiveFiles(entries) {
+  return [...entries.entries()]
+    .map(([entryPath, data]) => ({
+      path: entryPath,
+      name: entryPath.split("/").at(-1) ?? entryPath,
+      size: data.length,
+      language: languageOf(entryPath),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 export function createProjectStore({ rootDir, seed = true }) {
@@ -204,54 +226,83 @@ export function createProjectStore({ rootDir, seed = true }) {
     return root;
   }
 
-  async function seedIfEmpty() {
-    const projects = await list();
-    if (projects.length > 0) return projects;
+  async function readArchive(filePath) {
+    const buffer = await fs.readFile(filePath);
+    return readAcm(buffer);
+  }
 
-    await create({ name: "Northwind Analytics", template: "dashboard" });
-    await create({ name: "Flux Console", template: "agent" });
-    await create({ name: "AcidMade Core", template: "blank" });
-    return list();
+  function recordFromManifest(manifest, filePath, fileCount, stats) {
+    const fallback = manifestDefaults(
+      path.basename(filePath, path.extname(filePath))
+        .split(/[-_]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ") || "Untitled project",
+    );
+    const merged = { ...fallback, ...(manifest ?? {}) };
+    const slug = merged.slug || slugify(path.basename(filePath, path.extname(filePath)));
+    return {
+      id: slug,
+      name: merged.name,
+      slug,
+      branch: merged.branch ?? "main",
+      environment: merged.environment ?? "Local",
+      path: filePath,
+      scene: merged.scene ?? "res://scenes/MainApp.acid",
+      template: merged.template ?? "Blank scene",
+      summary: merged.summary ?? "",
+      createdAt: merged.createdAt ?? stats.birthtime.toISOString(),
+      updatedAt: merged.updatedAt ?? stats.mtime.toISOString(),
+      fileCount,
+      format: merged.format ?? "acm/1.0",
+    };
   }
 
   async function list() {
     await ensureRoot();
     const entries = await fs.readdir(root, { withFileTypes: true });
     const records = [];
+
     for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
-      const directory = path.join(root, entry.name);
-      const manifest = await readManifest(directory);
-      // Only directories that look like projects are listed.
-      if (!manifest && !(await hasScene(directory))) continue;
-      records.push(await toRecord(directory, manifest));
+      if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(EXTENSION)) {
+        const filePath = path.join(root, entry.name);
+        const stats = await fs.stat(filePath).catch(() => null);
+        if (!stats) continue;
+        try {
+          const archive = await readArchive(filePath);
+          const manifest = parseManifest(acmText(archive, MANIFEST) ?? "");
+          records.push(recordFromManifest(manifest, filePath, archive.size, stats));
+        } catch {
+          // A file with the extension but a broken archive is skipped rather
+          // than breaking the whole project list.
+        }
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        const directory = path.join(root, entry.name);
+        const manifestPath = path.join(directory, MANIFEST);
+        if (!(await fileExists(manifestPath))) continue;
+        const stats = await fs.stat(directory);
+        const manifest = parseManifest(await fs.readFile(manifestPath, "utf8").catch(() => ""));
+        const count = await countFolderFiles(directory);
+        records.push(recordFromManifest(manifest, directory, count, stats));
+      }
     }
+
     records.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
     return records;
   }
 
-  async function hasScene(directory) {
-    try {
-      const entries = await fs.readdir(path.join(directory, "scenes"));
-      return entries.some((file) => file.endsWith(".acid"));
-    } catch {
-      return false;
-    }
-  }
-
-  async function uniqueDirectory(name) {
-    const base = slugify(name);
-    let candidate = path.join(root, base);
-    let suffix = 2;
-    for (;;) {
-      try {
-        await fs.access(candidate);
-        candidate = path.join(root, base + "-" + suffix);
-        suffix += 1;
-      } catch {
-        return candidate;
-      }
-    }
+  async function seedIfEmpty() {
+    const projects = await list();
+    if (projects.length > 0) return projects;
+    await create({ name: "Northwind Analytics", template: "dashboard" });
+    await create({ name: "Flux Console", template: "agent" });
+    await create({ name: "AcidMade Core", template: "blank" });
+    return list();
   }
 
   async function create({ name, template = "dashboard" }) {
@@ -259,145 +310,176 @@ export function createProjectStore({ rootDir, seed = true }) {
     const clean = String(name ?? "").trim();
     if (!clean) throw new Error("project name is required");
 
-    const directory = await uniqueDirectory(clean);
-    await fs.mkdir(directory, { recursive: true });
+    const base = slugify(clean);
+    let filePath = path.join(root, base + EXTENSION);
+    let suffix = 2;
+    while (await fileExists(filePath)) {
+      filePath = path.join(root, base + "-" + suffix + EXTENSION);
+      suffix += 1;
+    }
 
-    const created = manifestDefaults(path.basename(directory), template);
-    created.name = clean;
+    const meta = templateMeta(template);
     const manifest = {
-      ...created,
-      slug: path.basename(directory),
-      template: templateMeta(template).name,
-      summary: templateMeta(template).summary,
-      scene: templateMeta(template).scene,
+      ...manifestDefaults(clean, template),
+      slug: path.basename(filePath, EXTENSION),
+      template: meta.name,
+      summary: meta.summary,
+      scene: meta.scene,
     };
-    await writeJson(path.join(directory, MANIFEST), manifest);
-    await writeJson(path.join(directory, "scenes", "MainApp.acid"), sceneFor(template));
+
+    const entries = [
+      { path: MANIFEST, data: JSON.stringify(manifest, null, 2) + "\n" },
+      { path: "scenes/MainApp.acid", data: JSON.stringify(sceneFor(template), null, 2) + "\n" },
+    ];
 
     if (template === "agent") {
-      await writeJson(path.join(directory, "scenes", "AgentMesh.acid"), sceneFor("agent"));
-      await fs.mkdir(path.join(directory, "agents"), { recursive: true });
-      await fs.writeFile(
-        path.join(directory, "agents", "Orchestrator.agent.ts"),
-        [
+      entries.push({
+        path: "scenes/AgentMesh.acid",
+        data: JSON.stringify(sceneFor("agent"), null, 2) + "\n",
+      });
+      entries.push({
+        path: "agents/Orchestrator.agent.ts",
+        data: [
           'import type { AgentContext } from "@acidmade/engine";',
           "",
-          "export const model = \"claude-sonnet-4-6\";",
-          "export const autonomy = \"Ask Permission\";",
+          'export const model = "claude-sonnet-4-6";',
+          'export const autonomy = "Ask Permission";',
           "export const maxSteps = 20;",
           "",
           "export async function onRun(context: AgentContext) {",
           "  await context.inspectScene();",
-          "  return context.report(\"agent mesh ready\");",
+          '  return context.report("agent mesh ready");',
           "}",
           "",
         ].join("\n"),
-        "utf8",
-      );
-    }
-
-    if (template !== "blank") {
-      await writeJson(path.join(directory, "acid.config.json"), {
-        acid: "1.0",
-        accent: "#CCFF00",
-        density: "engine",
-        radius: 4,
       });
     }
 
-    await fs.writeFile(
-      path.join(directory, "README.md"),
-      [
-        "# " + clean,
-        "",
-        manifest.summary,
-        "",
-        "Open this folder in AcidMade to edit the scene and its resources.",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
+    if (template !== "blank") {
+      entries.push({
+        path: "acid.config.json",
+        data: JSON.stringify({ acid: "1.0", accent: "#CCFF00", density: "engine", radius: 4 }, null, 2) + "\n",
+      });
+    }
 
-    return toRecord(directory, manifest);
+    entries.push({
+      path: "README.md",
+      data: ["# " + clean, "", meta.summary, "", "Open this .acm file in AcidMade.", ""].join("\n"),
+    });
+
+    await fs.writeFile(filePath, writeAcm(entries));
+    const stats = await fs.stat(filePath);
+    return recordFromManifest(manifest, filePath, entries.length, stats);
   }
 
-  async function open(directory) {
-    const resolved = path.resolve(String(directory));
+  async function open(target) {
+    const resolved = path.resolve(String(target));
     const stats = await fs.stat(resolved).catch(() => null);
-    if (!stats || !stats.isDirectory()) throw new Error("not a directory");
+    if (!stats) throw new Error("project file not found");
 
-    let manifest = await readManifest(resolved);
+    if (stats.isFile()) {
+      if (!resolved.toLowerCase().endsWith(EXTENSION)) {
+        throw new Error("not an AcidMade project (.acm)");
+      }
+      const archive = await readArchive(resolved);
+      const manifest = parseManifest(acmText(archive, MANIFEST) ?? "");
+      if (!manifest) {
+        const created = manifestDefaults(path.basename(resolved, EXTENSION));
+        const entries = [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data }));
+        entries.push({ path: MANIFEST, data: JSON.stringify(created, null, 2) + "\n" });
+        await fs.writeFile(resolved, writeAcm(entries));
+        return recordFromManifest(created, resolved, entries.length, await fs.stat(resolved));
+      }
+      return recordFromManifest(manifest, resolved, archive.size, stats);
+    }
+
+    // Legacy folder project.
+    const manifestPath = path.join(resolved, MANIFEST);
+    let manifest = parseManifest(await fs.readFile(manifestPath, "utf8").catch(() => ""));
     if (!manifest) {
       manifest = manifestDefaults(path.basename(resolved));
-      await writeJson(path.join(resolved, MANIFEST), manifest);
+      await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
     }
-    return toRecord(resolved, manifest);
+    const count = await countFolderFiles(resolved);
+    return recordFromManifest(manifest, resolved, count, stats);
   }
 
   async function tree(projectPath) {
-    const base = path.resolve(String(projectPath));
-    const files = [];
-
-    async function walk(directory, prefix, depth) {
-      if (depth > 6) return;
-      let entries = [];
-      try {
-        entries = await fs.readdir(directory, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      entries.sort((a, b) => a.name.localeCompare(b.name));
-      for (const entry of entries) {
-        if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
-        const relative = prefix ? prefix + "/" + entry.name : entry.name;
-        if (entry.isDirectory()) {
-          await walk(path.join(directory, entry.name), relative, depth + 1);
-          continue;
-        }
-        const stats = await fs.stat(path.join(directory, entry.name)).catch(() => null);
-        if (!stats) continue;
-        files.push({
-          path: relative,
-          name: entry.name,
-          size: stats.size,
-          mtime: stats.mtime.toISOString(),
-          language: languageOf(entry.name),
-        });
-      }
-    }
-
-    await walk(base, "", 0);
-    return files;
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved).catch(() => null);
+    if (!stats) throw new Error("project not found");
+    if (stats.isDirectory()) return folderFiles(resolved);
+    return archiveFiles(await readArchive(resolved));
   }
 
   async function readFile(projectPath, relative) {
-    const target = resolveInside(projectPath, relative);
-    const stats = await fs.stat(target);
-    if (!stats.isFile()) throw new Error("not a file");
-    if (stats.size > MAX_READ) throw new Error("file is larger than 2 MB");
-    const content = await fs.readFile(target, "utf8");
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved);
+    if (stats.isDirectory()) {
+      const target = resolveInside(resolved, relative);
+      const fileStats = await fs.stat(target);
+      if (!fileStats.isFile()) throw new Error("not a file");
+      if (fileStats.size > MAX_READ) throw new Error("file is larger than 2 MB");
+      return {
+        content: await fs.readFile(target, "utf8"),
+        size: fileStats.size,
+        mtime: fileStats.mtime.toISOString(),
+        language: languageOf(target),
+      };
+    }
+
+    const archive = await readArchive(resolved);
+    const entryPath = String(relative).replace(/\\/g, "/").replace(/^\/+/, "");
+    const data = archive.get(entryPath);
+    if (!data) throw new Error("file not found in project");
+    if (data.length > MAX_READ) throw new Error("file is larger than 2 MB");
     return {
-      content,
-      size: stats.size,
+      content: data.toString("utf8"),
+      size: data.length,
       mtime: stats.mtime.toISOString(),
-      language: languageOf(target),
+      language: languageOf(entryPath),
     };
   }
 
   async function writeFile(projectPath, relative, content) {
-    const target = resolveInside(projectPath, relative);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.writeFile(target, String(content ?? ""), "utf8");
-    const stats = await fs.stat(target);
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved);
+    const body = String(content ?? "");
 
-    const manifestPath = path.join(path.resolve(projectPath), MANIFEST);
-    const manifest = await readManifest(path.resolve(projectPath));
-    if (manifest) {
-      manifest.updatedAt = new Date().toISOString();
-      await writeJson(manifestPath, manifest);
+    if (stats.isDirectory()) {
+      const target = resolveInside(resolved, relative);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, body, "utf8");
+      const fileStats = await fs.stat(target);
+      const manifestPath = path.join(resolved, MANIFEST);
+      const manifest = parseManifest(await fs.readFile(manifestPath, "utf8").catch(() => ""));
+      if (manifest) {
+        manifest.updatedAt = new Date().toISOString();
+        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+      }
+      return { size: fileStats.size, mtime: fileStats.mtime.toISOString() };
     }
 
-    return { size: stats.size, mtime: stats.mtime.toISOString() };
+    const archive = await readArchive(resolved);
+    const entryPath = String(relative).replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!entryPath || entryPath.includes("..")) throw new Error("invalid entry path");
+
+    const entries = [...archive.entries()].map(([path_, data]) => ({ path: path_, data }));
+    const manifestEntry = entries.find((entry) => entry.path === MANIFEST);
+    if (manifestEntry) {
+      const manifest = parseManifest(String(manifestEntry.data)) ?? {};
+      manifest.updatedAt = new Date().toISOString();
+      manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
+    }
+
+    const payload = Buffer.from(body, "utf8");
+    const existing = entries.find((entry) => entry.path === entryPath);
+    if (existing) existing.data = payload;
+    else entries.push({ path: entryPath, data: payload });
+
+    await fs.writeFile(resolved, writeAcm(entries));
+    const fileStats = await fs.stat(resolved);
+    return { size: payload.length, mtime: fileStats.mtime.toISOString() };
   }
 
   return {

@@ -80,8 +80,8 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds every
 format on its native runner and publishes a GitHub release with the artifacts:
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 ## Signing

@@ -105,19 +105,26 @@ immediately. The name is slugified for the path and the slug field.
 | Agent workspace | `res://scenes/AgentMesh.acid` | 5 | 3 | Agent-first, no UI shell |
 | Blank scene | `res://scenes/MainApp.acid` | 1 | 0 | Start from a root node |
 
-In the desktop app, creating a project writes a real directory: `acidmade.json`,
-`scenes/MainApp.acid`, `acid.config.json`, an `agents/` starter for the agent
-template, and a short `README.md`. Projects live under `Documents/AcidMade` unless
-`ACIDMADE_PROJECTS_DIR` points elsewhere. In the browser preview there is no
-filesystem access, so created projects stay in `acidmade.launcher.v1` instead.
+A project is a single `.acm` container file. Creating one writes the archive with
+`acidmade.json`, `scenes/MainApp.acid`, `acid.config.json`, an `agents/` starter
+for the agent template, and a short `README.md` inside it. Projects live under
+`Documents/AcidMade` unless `ACIDMADE_PROJECTS_DIR` points elsewhere. In the
+browser preview there is no filesystem access, so created projects stay in
+`acidmade.launcher.v1` instead.
+
+The container is a zip archive with stored (uncompressed) entries, so it stays
+inspectable with ordinary tools. The reader also accepts deflated entries.
+Directory projects from older builds, with an `acidmade.json` at their root, keep
+working.
 
 ### 3.2.1 Open, reveal and save
 
-- **Open folder…** registers an existing directory; a manifest is created when
-  the folder does not have one.
-- **Reveal** shows the project directory in the system file manager.
-- Selecting a file reads it from disk. `Ctrl`/`Cmd`+`S` writes the buffer back
-  and updates `updatedAt` in the manifest. The browser preview is read-only.
+- **Open project…** picks an existing `.acm` file; a manifest is added when the
+  archive does not have one.
+- **Reveal** shows the `.acm` file in the system file manager.
+- Selecting a resource reads its entry from the container. `Ctrl`/`Cmd`+`S`
+  rewrites the archive and updates `updatedAt` in the manifest. The browser
+  preview is read-only.
 
 ### 3.3 Resource browser
 
@@ -138,6 +145,45 @@ script workspace.
 
 **Project → Projects & Files** reopens the manager from anywhere in the editor.
 The editor keeps your workspace state while the manager is open.
+
+### 3.5 The `.acm` container
+
+An AcidMade project is one file with the `.acm` extension. Inside it is a zip
+archive with stored entries:
+
+| Entry | Required | Content |
+| --- | --- | --- |
+| `acidmade.json` | yes | Project manifest |
+| `scenes/MainApp.acid` | yes | Entry scene, `acid/1.0` |
+| `acid.config.json` | no | Accent, density and radius tokens |
+| `agents/*.agent.ts` | no | Agent scripts |
+| `prompts/*.prompt` | no | Reusable agent prompts |
+| `README.md` | no | Human notes |
+
+Manifest fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `format` | string | `acm/1.0` |
+| `name` | string | Display name |
+| `slug` | string | Id derived from the file name |
+| `branch` | string | Branch shown in the manager |
+| `environment` | string | `Local`, `Preview`, `Staging` |
+| `scene` | string | `res://` path of the entry scene |
+| `template` | string | Template the project was created from |
+| `summary` | string | One-line description |
+| `createdAt` | ISO string | Creation time |
+| `updatedAt` | ISO string | Rewritten on every save |
+
+Behaviour:
+
+- Reading an entry never mutates the file. Writing rewrites the whole archive
+  with the replaced entry and a fresh `updatedAt`.
+- Entry paths are normalised and rejected if they contain `..`, and a resource
+  larger than 2 MB is refused by the reader.
+- A `.acm` without a manifest is adopted: one is generated on open and written
+  back on the next save.
+- Folder projects from older builds still open and edit normally.
 
 ## 4. Workspace layout
 
@@ -561,7 +607,7 @@ a run is active.
 | `ACIDMADE_RUNTIME_HOST` | `127.0.0.1` | Runtime bind address |
 | `ACIDMADE_RUNTIME_URL` | `http://127.0.0.1:4317` | Vite proxy target |
 | `ACIDMADE_DEV_URL` | unset | Electron loads this dev URL instead of `dist` |
-| `ACIDMADE_PROJECTS_DIR` | `Documents/AcidMade` | Root folder scanned by the project manager |
+| `ACIDMADE_PROJECTS_DIR` | `Documents/AcidMade` | Folder scanned for `.acm` projects |
 
 ### 17.2 Ports
 
@@ -644,7 +690,7 @@ then remove `identity: null` from `electron-builder.yml`.
 | Build stops without logs | Runtime crashed mid-run | Check the runtime terminal output |
 | Reload loses nodes | Browser storage blocked | Allow localStorage or use the desktop build |
 | Save is disabled in the file inspector | Running in the browser preview | Use the desktop build for writes |
-| A folder is missing from the list | No `acidmade.json` and no `scenes/*.acid` | Use **Open folder…** to register it |
+| A project is missing from the list | The file is not `.acm` or its archive is broken | Use **Open project…**, or check the archive |
 | macOS refuses to open the app | Unsigned build | Right-click, Open, then confirm |
 | Windows SmartScreen warning | Unsigned build | More info, Run anyway |
 

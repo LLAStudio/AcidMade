@@ -38,9 +38,10 @@ function registerProjectIpc() {
 
   ipcMain.handle("acidmade:projects:open-dialog", async () => {
     const result = await dialog.showOpenDialog({
-      title: "Open project folder",
+      title: "Open AcidMade project",
       buttonLabel: "Open project",
-      properties: ["openDirectory", "createDirectory"],
+      properties: ["openFile"],
+      filters: [{ name: "AcidMade project", extensions: ["acm"] }],
       defaultPath: store().root,
     });
     if (result.canceled || result.filePaths.length === 0) return null;

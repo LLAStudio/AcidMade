@@ -561,7 +561,7 @@ export function EngineBar() {
                 </span>
                 <div>
                   <div className="text-[12px] font-semibold text-zinc-100">AcidMade</div>
-                  <div className="font-mono text-[9px] text-zinc-500">v1.0.1.stable · engine build 2261</div>
+                  <div className="font-mono text-[9px] text-zinc-500">v1.0.2.stable · engine build 2261</div>
                 </div>
               </div>
               <p className="text-[10.5px] leading-relaxed text-zinc-500">
