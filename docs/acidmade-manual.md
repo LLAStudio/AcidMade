@@ -676,9 +676,28 @@ the artifacts. Pushing to `main` publishes the version in `package.json`;
 pushing a `v*` tag publishes that tag. Optional formats (Flatpak, MSI) are
 allowed to fail without blocking the rest.
 
-Signing: set `CSC_LINK` and `CSC_KEY_PASSWORD` for Windows and macOS, plus
-`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` for notarization,
-then remove `identity: null` from `electron-builder.yml`.
+### 20.1 Signing and notarization
+
+Signing is configured but optional. The workflow maps these repository secrets:
+
+| Secret | Used for |
+| --- | --- |
+| `WIN_CSC_LINK` | Base64 `.pfx` code-signing certificate |
+| `WIN_CSC_KEY_PASSWORD` | Certificate password |
+| `MAC_CSC_LINK` | Base64 Developer ID Application `.p12` |
+| `MAC_CSC_KEY_PASSWORD` | Certificate password |
+| `APPLE_ID` | Notarization account |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password |
+| `APPLE_TEAM_ID` | Apple team identifier |
+
+When the Windows secrets exist, Electron Builder signs the installers. When the
+Apple secrets exist, the macOS job passes `-c.mac.notarize=true`, which signs
+with the hardened runtime and the entitlements in `build/entitlements.mac.plist`
+and notarizes the DMG. Afterwards the workflow verifies with `codesign --verify`,
+`spctl --assess` and `xcrun stapler validate`.
+
+Without the secrets the build continues and logs a warning, so forks and local
+builds never fail on missing credentials.
 
 ## 21. Troubleshooting
 

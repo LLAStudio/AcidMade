@@ -9,9 +9,6 @@ on:
 permissions:
   contents: write
 
-env:
-  CSC_IDENTITY_AUTO_DISCOVERY: "false"
-
 jobs:
   linux:
     name: Linux · AppImage + Flatpak
@@ -46,6 +43,9 @@ jobs:
   windows:
     name: Windows · Setup, MSI, Portable
     runs-on: windows-latest
+    env:
+      CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,6 +55,14 @@ jobs:
       - run: npm ci
       - run: npm run icon
       - run: npm run build
+      - name: Signing status
+        shell: bash
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "Windows code signing certificate detected."
+          else
+            echo "::warning::WIN_CSC_LINK is not set, so the Windows installers will be unsigned and SmartScreen will warn."
+          fi
       - name: Build installer and portable app
         run: npx electron-builder --win nsis portable --publish never
       - name: Build MSI
@@ -71,6 +79,12 @@ jobs:
   macos:
     name: macOS · DMG + .app
     runs-on: macos-14
+    env:
+      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -80,8 +94,31 @@ jobs:
       - run: npm ci
       - run: npm run icon
       - run: npm run build
-      - name: Build DMG, zip and .app bundles
-        run: npx electron-builder --mac dmg zip dir --publish never
+      - name: Build, sign and notarize
+        run: |
+          set -euo pipefail
+          if [ -z "${CSC_LINK:-}" ]; then
+            echo "::warning::MAC_CSC_LINK is not set, so the app will be unsigned and Gatekeeper will block it."
+          fi
+          if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            echo "Apple credentials detected: notarizing."
+            npx electron-builder --mac dmg zip dir --publish never -c.mac.notarize=true
+          else
+            echo "::warning::Apple notarization credentials are not set; the DMG will be signed at most, not notarized."
+            npx electron-builder --mac dmg zip dir --publish never
+          fi
+      - name: Verify signature and notarization
+        if: env.CSC_LINK != ''
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          APP=$(ls -d release/mac*/AcidMade.app | head -1)
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute --verbose=2 "$APP" || echo "::warning::spctl rejected the app; notarization may be missing."
+          for DMG in release/*.dmg; do
+            xcrun stapler validate "$DMG" || echo "::warning::$DMG is not stapled."
+          done
+          echo "Checked $VERSION bundle at $APP"
       - name: Zip the .app bundles
         run: |
           VERSION=$(node -p "require('./package.json').version")

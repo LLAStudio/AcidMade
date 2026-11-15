@@ -78,8 +78,11 @@ Installers are produced by the release workflow and attached to
 | Linux | `AcidMade-<version>-<arch>.AppImage` | `chmod +x` and run |
 | Linux | `AcidMade-<version>-<arch>.flatpak` | `flatpak install AcidMade-*.flatpak` |
 
-Builds are unsigned, so Windows SmartScreen and macOS Gatekeeper warn on first
-launch. See [desktop-packaging.md](docs/desktop-packaging.md) for signing.
+Release builds are signed and notarized when the signing secrets are configured:
+a Windows code-signing certificate and an Apple Developer ID plus notarization
+credentials. Without those secrets the workflow still produces installers, but
+Windows SmartScreen and macOS Gatekeeper warn on first launch. Secret names and
+export steps are in [desktop-packaging.md](docs/desktop-packaging.md#signing-and-notarization).
 
 ## Project & file manager
 

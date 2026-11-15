@@ -84,10 +84,63 @@ git tag v1.0.2
 git push origin v1.0.2
 ```
 
-## Signing
+## Signing and notarization
 
-Builds are unsigned by default, so Windows SmartScreen and macOS Gatekeeper will
-warn on first launch. To sign and notarize, provide the usual credentials
-(`CSC_LINK`/`CSC_KEY_PASSWORD` for Windows and macOS, `APPLE_ID`,
-`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` for notarization) as CI secrets
-and remove `identity: null` from `electron-builder.yml`.
+Signing is wired but optional: without certificates the workflow still builds and
+warns in the run log, and with certificates it signs automatically. Nothing is
+committed to the repository — the values below are GitHub Actions secrets
+(**Settings → Secrets and variables → Actions**).
+
+### Windows
+
+| Secret | Content |
+| --- | --- |
+| `WIN_CSC_LINK` | Base64 of your `.pfx` code-signing certificate |
+| `WIN_CSC_KEY_PASSWORD` | Password for that `.pfx` |
+
+`CSC_LINK` and `CSC_KEY_PASSWORD` are mapped from those two secrets for the
+Windows job, which is what Electron Builder reads. Any OV/EV code-signing
+certificate works. EV certificates shipped on hardware tokens cannot be exported
+for CI; use an OV certificate or Azure Trusted Signing instead.
+
+Generate the value:
+
+```bash
+base64 -w0 certificate.pfx > certificate.pfx.b64
+# paste the file content into WIN_CSC_LINK
+```
+
+### macOS
+
+| Secret | Content |
+| --- | --- |
+| `MAC_CSC_LINK` | Base64 of a Developer ID Application `.p12` |
+| `MAC_CSC_KEY_PASSWORD` | Password for that `.p12` |
+| `APPLE_ID` | Apple account email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from appleid.apple.com |
+| `APPLE_TEAM_ID` | Team identifier from the Apple Developer account |
+
+Export the certificate from Keychain Access as `.p12`, then:
+
+```bash
+base64 -w0 DeveloperID.p12 > developerid.p12.b64
+```
+
+With those secrets present the macOS job runs Electron Builder with
+`-c.mac.notarize=true`, which signs with the hardened runtime, the entitlements
+in `build/entitlements.mac.plist`, and notarizes the DMG through Apple's service.
+A `codesign --verify` and `spctl --assess` check runs afterwards, and the DMG is
+validated with `xcrun stapler validate`.
+
+If the Apple secrets are missing, the job logs a warning and produces an unsigned
+or signed-but-not-notarized build instead of failing. Users can still open it with
+right-click → Open (or `xattr -dr com.apple.quarantine`).
+
+### Local builds
+
+```bash
+CSC_LINK="$(base64 -w0 certificate.pfx)" CSC_KEY_PASSWORD=... npm run package:win
+```
+
+Notarization is never triggered locally unless you pass
+`-c.mac.notarize=true` yourself.

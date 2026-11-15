@@ -31,6 +31,8 @@ asarUnpack:
 
 win:
   icon: build/icon.png
+  # Signing activates when WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD are present in CI.
+  signAndEditExecutable: true
   target:
     - target: nsis
       arch: [x64]
@@ -70,9 +72,13 @@ mac:
       arch: [x64, arm64]
     - target: zip
       arch: [x64, arm64]
-  hardenedRuntime: false
+  # Signing activates when MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD are present in CI.
+  # Notarization is passed on the command line only when the Apple secrets exist,
+  # so a local build without credentials still produces a usable (unsigned) app.
+  hardenedRuntime: true
   gatekeeperAssess: false
-  identity: null
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
 
 dmg:
   artifactName: AcidMade-${version}-${arch}.${ext}
