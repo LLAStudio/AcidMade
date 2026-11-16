@@ -318,8 +318,35 @@ jobs:
           if [ "$COUNT" = "0" ]; then
             echo "::warning::No artifacts were produced; the draft release keeps its tag and notes only."
           fi
+      - name: Check both macOS disk images are present
+        # A macOS job can fail, or upload only one architecture, while the
+        # release still looked complete. Both DMGs are mandatory: without them
+        # the job fails here and the draft is never un-drafted.
+        id: dmg
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          MISSING=""
+          for ARCH in x64 arm64; do
+            if [ ! -s "artifacts/AcidMade-${VERSION}-${ARCH}.dmg" ]; then
+              MISSING="$MISSING $ARCH"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing macOS disk image(s) for:$MISSING"
+            echo "::error::Every release must ship AcidMade-${VERSION}-x64.dmg and AcidMade-${VERSION}-arm64.dmg; ${{ needs.prepare.outputs.tag }} stays a draft."
+            echo "::error::DMGs among the collected artifacts:"
+            find artifacts -type f -name '*.dmg' -printf '%f (%s bytes)\n' 2>/dev/null || echo "  (none)"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "Both expected DMGs are present:"
+          for ARCH in x64 arm64; do
+            stat -c '%n (%s bytes)' "artifacts/AcidMade-${VERSION}-${ARCH}.dmg"
+          done
+          echo "present=true" >> "$GITHUB_OUTPUT"
       - name: Attach the artifacts
-        if: needs.verify-acm.result == 'success' && steps.collected.outputs.files != '0'
+        if: needs.verify-acm.result == 'success' && steps.dmg.outputs.present == 'true' && steps.collected.outputs.files != '0'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
@@ -347,14 +374,12 @@ jobs:
             echo "published=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Linux and Windows are required; macOS is published when it succeeds,
-          # and a macOS failure no longer blocks the release on its own.
-          if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ]; then
+          # Linux, Windows and macOS are all required. The DMG presence check
+          # above already failed the job when one disk image is missing, so this
+          # step only runs for a complete set.
+          if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ] && [ "$MACOS" = "success" ]; then
             gh release edit "$TAG" --draft=false
             echo "published=true" >> "$GITHUB_OUTPUT"
-            if [ "$MACOS" != "success" ]; then
-              echo "::warning::Published $TAG without macOS artifacts (macos=$MACOS). Add them by re-running the macOS job and re-running publish."
-            fi
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Release $TAG stays a draft: linux=$LINUX windows=$WINDOWS macos=$MACOS. Artifacts from the successful platforms are attached; publish it manually once the rest is green."
@@ -371,6 +396,7 @@ jobs:
             echo "| Linux | ${{ needs.linux.result }} |"
             echo "| Windows | ${{ needs.windows.result }} |"
             echo "| macOS | ${{ needs.macos.result }} |"
+            echo "| DMGs | ${{ steps.dmg.outputs.present }} |"
             echo ""
             echo "Artifacts attached: ${{ steps.collected.outputs.files }}"
             echo "Published: ${{ steps.publish.outputs.published }}"

@@ -104,23 +104,29 @@ longer stop the release from existing:
    a matrix over `macos-15-intel` (x64 DMG) and `macos-15` (arm64 DMG);
    `macos-13` was retired in December 2025 and jobs on that label waited forever
    for a runner that no longer exists.
-4. `publish` — runs with `if: always()`, attaches every collected artifact to the
-   draft, and un-drafts the release once **Linux and Windows succeeded**. A
-   failed `verify-acm` keeps the release a draft with no artifacts attached,
-   even if an earlier attempt left some behind.
+4. `publish` — runs with `if: always()`, checks that **both** expected disk
+   images (`AcidMade-<version>-x64.dmg` and `AcidMade-<version>-arm64.dmg`) are
+   among the downloaded artifacts, attaches every collected artifact to the
+   draft, and un-drafts the release only once Linux, Windows **and** macOS
+   succeeded. A missing DMG fails the job with the architectures that are
+   absent, and the release stays a draft; a failed `verify-acm` also keeps the
+   release a draft with no artifacts attached, even if an earlier attempt left
+   some behind.
 
-macOS artifacts are included when that job passes; a failing or unavailable
-macOS runner no longer holds the release back, and the run log says the release
-was published without them. Linux or Windows failing keeps the release as a
-draft with whatever the other platforms built. Build jobs time out after 30
-minutes (40 for the macOS matrix, 10 for the container check), and a new push
-cancels the previous attempt so a stuck job cannot block the next release.
+Linux, Windows or macOS failing keeps the release as a draft with whatever the
+other platforms built, and a run without both DMGs is red instead of quietly
+publishing an incomplete release. Build jobs time out after 30 minutes (40 for
+the macOS matrix, 10 for the container check), and a new push cancels the
+previous attempt so a stuck job cannot block the next release.
 
 Run the same gate locally before pushing:
 
 ```bash
 npm run verify:acm
 ```
+
+The publish job fails when `release/*.dmg` did not yield both architectures, so
+a macOS build that silently skipped a target cannot produce a public release.
 
 Local tagging is still possible:
 
