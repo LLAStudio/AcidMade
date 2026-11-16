@@ -220,8 +220,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run icon
-      - run: npm run build
       - name: Check the DMG helper is available
         # dmg-license is an optional darwin dependency of dmg-builder, required
         # at load time for every macOS target, not just licensed DMGs. The
@@ -244,6 +242,9 @@ jobs:
         # a DMG that Gatekeeper blocks without explanation.
         id: signing
         run: node scripts/check-mac-signing.mjs
+      # Compile only once the helpers and the certificate are known to be usable.
+      - run: npm run icon
+      - run: npm run build
       - name: Build, sign and notarize
         id: build
         env:
