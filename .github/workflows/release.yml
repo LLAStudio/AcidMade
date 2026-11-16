@@ -181,21 +181,48 @@ jobs:
       - run: npm ci
       - run: npm run icon
       - run: npm run build
+      - name: Ensure the DMG helper is installed
+        # dmg-license is only an optional dependency of dmg-builder, and the
+        # module is required at load time for every macOS target, not just for
+        # licensed DMGs. A lockfile generated on Linux can leave it out, and the
+        # build then dies with "Cannot find module 'dmg-license'" before it
+        # writes anything.
+        run: |
+          set -euo pipefail
+          if node -e "require.resolve('dmg-license')" 2>/dev/null; then
+            echo "dmg-license is already installed."
+          else
+            npm install --no-save --no-package-lock dmg-license@^1.0.11
+          fi
       - name: Build, sign and notarize
         run: |
           set -euo pipefail
+          LOG="$RUNNER_TEMP/mac-build.log"
+          report() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              echo "::error::electron-builder exited with status $status"
+              tail -n 12 "$LOG" 2>/dev/null | while IFS= read -r line; do
+                echo "::error::${line}"
+              done
+            fi
+          }
+          trap report EXIT
+          echo "node $(node -v) on $(uname -m), disk:"
+          df -h . | tail -1
+          npm ls dmg-license --depth=0 || true
           if [ -z "${CSC_LINK:-}" ]; then
             echo "::warning::MAC_CSC_LINK is not set, so the app will be unsigned and Gatekeeper will block it."
           fi
+          ARGS=(--mac dmg zip dir "--${{ matrix.arch }}" --publish never
+            -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}')
           if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
             echo "Apple credentials detected: notarizing."
-            npx electron-builder --mac dmg zip dir --${{ matrix.arch }} --publish never \
-              -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}' -c.mac.notarize=true
+            ARGS+=(-c.mac.notarize=true)
           else
             echo "::warning::Apple notarization credentials are not set; the DMG will be signed at most, not notarized."
-            npx electron-builder --mac dmg zip dir --${{ matrix.arch }} --publish never \
-              -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}'
           fi
+          npx electron-builder "${ARGS[@]}" 2>&1 | tee "$LOG"
       - name: Verify signature and notarization
         if: env.CSC_LINK != ''
         run: |
