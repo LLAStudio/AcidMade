@@ -150,13 +150,22 @@ jobs:
             release/*.msi
 
   macos:
-    name: macOS · DMG + .app
+    name: macOS · DMG (${{ matrix.arch }})
     needs: prepare
-    # macos-14 resolves to an arm64 runner this repository cannot use; macos-13
-    # is the x64 image, and electron-builder still produces both architectures.
-    runs-on: macos-13
+    # macos-13 was retired on 4 December 2025: jobs kept waiting for a runner
+    # that no longer exists and never produced a DMG. macos-15-intel is the
+    # supported x64 image and macos-15 is arm64, so one job builds each.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     # A queued macOS runner must never hold the release hostage.
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -180,10 +189,12 @@ jobs:
           fi
           if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
             echo "Apple credentials detected: notarizing."
-            npx electron-builder --mac dmg zip dir --publish never -c.mac.notarize=true
+            npx electron-builder --mac dmg zip dir --${{ matrix.arch }} --publish never \
+              -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}' -c.mac.notarize=true
           else
             echo "::warning::Apple notarization credentials are not set; the DMG will be signed at most, not notarized."
-            npx electron-builder --mac dmg zip dir --publish never
+            npx electron-builder --mac dmg zip dir --${{ matrix.arch }} --publish never \
+              -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}'
           fi
       - name: Verify signature and notarization
         if: env.CSC_LINK != ''
@@ -199,19 +210,21 @@ jobs:
           echo "Checked $VERSION bundle at $APP"
       - name: Zip the .app bundles
         run: |
+          set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
+          APP_DIR="mac-arm64"
+          if [ "${{ matrix.arch }}" = "x64" ]; then APP_DIR="mac"; fi
           cd release
-          if [ -d mac/AcidMade.app ]; then
-            ditto -c -k --sequesterRsrc --keepParent mac/AcidMade.app "AcidMade-$VERSION-x64-app.zip"
-          fi
-          if [ -d mac-arm64/AcidMade.app ]; then
-            ditto -c -k --sequesterRsrc --keepParent mac-arm64/AcidMade.app "AcidMade-$VERSION-arm64-app.zip"
+          if [ -d "$APP_DIR/AcidMade.app" ]; then
+            ditto -c -k --sequesterRsrc --keepParent "$APP_DIR/AcidMade.app" "AcidMade-$VERSION-${{ matrix.arch }}-app.zip"
+          else
+            echo "::warning::No $APP_DIR/AcidMade.app to zip."
           fi
       - name: Collect the DMGs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: macos-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 7
           path: |

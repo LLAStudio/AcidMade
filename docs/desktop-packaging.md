@@ -83,16 +83,19 @@ longer stop the release from existing:
 
 1. `prepare` — tag + draft release with generated notes.
 2. `linux`, `windows`, `macos` — build in parallel, uploading whatever they
-   produced even when an optional format (Flatpak, MSI) fails.
+   produced even when an optional format (Flatpak, MSI) fails. The macOS job is
+   a matrix over `macos-15-intel` (x64 DMG) and `macos-15` (arm64 DMG);
+   `macos-13` was retired in December 2025 and jobs on that label waited forever
+   for a runner that no longer exists.
 3. `publish` — runs with `if: always()`, attaches every collected artifact to the
    draft, and un-drafts the release once **Linux and Windows succeeded**.
 
 macOS artifacts are included when that job passes; a failing or unavailable
 macOS runner no longer holds the release back, and the run log says the release
 was published without them. Linux or Windows failing keeps the release as a
-draft with whatever the other platforms built. Every job has a 30-minute
-timeout, and a new push cancels the previous attempt so a stuck job cannot block
-the next release.
+draft with whatever the other platforms built. Build jobs time out after 30
+minutes (40 for the macOS matrix), and a new push cancels the previous attempt so
+a stuck job cannot block the next release.
 
 Local tagging is still possible:
 
