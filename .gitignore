@@ -6,3 +6,6 @@ release/
 *.log
 .DS_Store
 /freebuff-sites-build/
+
+# Chat/build scratch artifacts
+artifacts/
