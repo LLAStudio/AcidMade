@@ -81,8 +81,10 @@ Installers are produced by the release workflow and attached to
 Release builds are signed and notarized when the signing secrets are configured:
 a Windows code-signing certificate and an Apple Developer ID plus notarization
 credentials. Without those secrets the workflow still produces installers, but
-Windows SmartScreen and macOS Gatekeeper warn on first launch. Secret names and
-export steps are in [desktop-packaging.md](docs/desktop-packaging.md#signing-and-notarization).
+Windows SmartScreen and macOS Gatekeeper warn on first launch. On macOS a secret
+that is set but unusable fails the job with an explicit error instead of
+shipping an unsigned DMG. Secret names and export steps are in
+[desktop-packaging.md](docs/desktop-packaging.md#signing-and-notarization).
 
 ## Project & file manager
 

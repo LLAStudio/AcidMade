@@ -194,8 +194,16 @@ jobs:
           else
             npm install --no-save --no-package-lock dmg-license@^1.0.11
           fi
+      - name: Check the macOS signing inputs
+        # A wrong MAC_CSC_LINK fails here, with the reason, instead of shipping
+        # a DMG that Gatekeeper blocks without explanation.
+        id: signing
+        run: node scripts/check-mac-signing.mjs
       - name: Build, sign and notarize
         id: build
+        env:
+          SIGN_MAC: ${{ steps.signing.outputs.signed }}
+          NOTARIZE_MAC: ${{ steps.signing.outputs.notarize }}
         run: |
           set -euo pipefail
           LOG="$RUNNER_TEMP/mac-build.log"
@@ -214,47 +222,25 @@ jobs:
           npm ls dmg-license --depth=0 || true
           ARGS=(--mac dmg zip dir "--${{ matrix.arch }}" --publish never
             -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}')
-          # CSC_LINK reaches electron-builder as a path, an https URL or a base64
-          # blob. A secret that holds anything else (a folder, a placeholder) makes
-          # the signing step throw "<dir> not a file" and the build dies before the
-          # DMG exists, so only enable signing when the link is usable.
-          SIGN=false
-          CERT="${CSC_LINK#file://}"
-          if [ -n "${CSC_LINK:-}" ]; then
-            case "$CSC_LINK" in
-              http://*|https://*|data:*) SIGN=true ;;
-              *)
-                if [ -f "$CERT" ]; then
-                  SIGN=true
-                elif [ ${#CSC_LINK} -gt 512 ]; then
-                  SIGN=true
-                else
-                  echo "::warning::MAC_CSC_LINK does not point at a certificate file; building unsigned."
-                fi
-                ;;
-            esac
-          fi
-          if [ "$SIGN" = true ]; then
-            echo "Code signing certificate detected."
-            echo "signed=true" >> "$GITHUB_OUTPUT"
+          if [ "$SIGN_MAC" = "true" ]; then
+            echo "Signing with the configured Developer ID certificate."
+            if [ "$NOTARIZE_MAC" = "true" ]; then
+              echo "Apple credentials present: notarizing."
+              ARGS+=(-c.mac.notarize=true)
+            else
+              echo "::warning::No Apple notarization secrets; the DMG will be signed but not notarized."
+            fi
           else
-            echo "::warning::No usable macOS certificate, so the app will be unsigned and Gatekeeper will block it."
+            echo "::warning::No macOS certificate secret; building unsigned (Gatekeeper will block it)."
             # Without a certificate electron-builder still attempts an ad-hoc
             # hardened-runtime signature and fails before writing the DMG.
-            echo "signed=false" >> "$GITHUB_OUTPUT"
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             unset CSC_LINK CSC_KEY_PASSWORD
             ARGS+=(-c.mac.hardenedRuntime=false)
           fi
-          if [ "$SIGN" = true ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
-            echo "Apple credentials detected: notarizing."
-            ARGS+=(-c.mac.notarize=true)
-          else
-            echo "::warning::Apple notarization credentials are not set; the DMG will be signed at most, not notarized."
-          fi
           npx electron-builder "${ARGS[@]}" 2>&1 | tee "$LOG"
       - name: Verify signature and notarization
-        if: steps.build.outputs.signed == 'true'
+        if: steps.signing.outputs.signed == 'true'
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")

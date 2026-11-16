@@ -144,34 +144,107 @@ base64 -w0 certificate.pfx > certificate.pfx.b64
 
 ### macOS
 
-| Secret | Content |
-| --- | --- |
-| `MAC_CSC_LINK` | Base64 of a Developer ID Application `.p12` |
-| `MAC_CSC_KEY_PASSWORD` | Password for that `.p12` |
-| `APPLE_ID` | Apple account email |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from appleid.apple.com |
-| `APPLE_TEAM_ID` | Team identifier from the Apple Developer account |
+The goal is a Developer ID signed DMG, with the hardened runtime, notarized by
+Apple and stapled so Gatekeeper accepts it offline.
 
-Export the certificate from Keychain Access as `.p12`, then:
+#### 1. Export the certificate
+
+You need an active **Apple Developer Program** membership and a
+**Developer ID Application** certificate (not “Apple Development”): create it in
+developer.apple.com → Certificates, Identifiers & Profiles → Certificates, then
+add it to the login keychain.
+
+In **Keychain Access → My Certificates**, right-click the certificate → **Export
+…**, choose **.p12**, and set a strong password. That password is
+`MAC_CSC_KEY_PASSWORD`; the `.p12` file is `MAC_CSC_LINK`.
+
+Check which identity and team you have:
 
 ```bash
+security find-identity -v -p codesigning
+# 1) ABCD1234... "Developer ID Application: LLAStudio (TEAMID1234)"
+```
+
+The value in parentheses is `APPLE_TEAM_ID` (10 characters).
+
+#### 2. Base64 the certificate
+
+```bash
+# macOS
+base64 -i DeveloperID.p12 | tr -d '\n' > developerid.p12.b64
+# Linux
 base64 -w0 DeveloperID.p12 > developerid.p12.b64
 ```
 
-With those secrets present the macOS job runs Electron Builder with
-`-c.mac.notarize=true`, which signs with the hardened runtime, the entitlements
-in `build/entitlements.mac.plist`, and notarizes the DMG through Apple's service.
-A `codesign --verify` and `spctl --assess` check runs afterwards, and the DMG is
-validated with `xcrun stapler validate`.
+The file is one long line and usually 5–10 KB, well under the 48 KB secret limit.
 
-If the Apple secrets are missing, the job logs a warning and produces an unsigned
-or signed-but-not-notarized build instead of failing. Users can still open it with
-right-click → Open (or `xattr -dr com.apple.quarantine`).
+#### 3. Create the repository secrets
 
-`MAC_CSC_LINK` must hold a base64 `.p12`, an `https://` URL or a path that exists
-on the runner. A secret holding a folder or a placeholder is ignored with a
-warning: Electron Builder would otherwise stop on `<dir> not a file` while
-importing the certificate, before it writes any DMG.
+**Settings → Secrets and variables → Actions → New repository secret**, exactly
+these five names:
+
+| Secret | What to paste | Where it comes from |
+| --- | --- | --- |
+| `MAC_CSC_LINK` | the whole content of `developerid.p12.b64`, one line, no quotes | step 2 |
+| `MAC_CSC_KEY_PASSWORD` | the password chosen at export | step 1 |
+| `APPLE_ID` | the Apple Developer account email | your account |
+| `APPLE_APP_SPECIFIC_PASSWORD` | an app-specific password, e.g. `abcd-efgh-ijkl-mnop` | appleid.apple.com → Sign-In and Security → App-Specific Passwords |
+| `APPLE_TEAM_ID` | the 10-character team identifier | step 1, or developer.apple.com → Membership |
+
+Notes:
+
+- The app-specific password is **not** the Apple ID password. It requires
+two-factor authentication on the account and is shown once; regenerate it if lost.
+- `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` are the Windows equivalents.
+- Secrets cannot be read back from GitHub; to correct one, create it again with
+the same name.
+
+#### 4. What the workflow does
+
+Before building, `scripts/check-mac-signing.mjs` validates the inputs and writes
+`signed` / `notarize` outputs:
+
+- a path (`/…`, `./…`, `~/…`, `file://…`) must exist and be a non-empty file;
+- a base64 value must decode to at least 100 bytes and start with `0x30` (a
+  PKCS#12 DER sequence), which rejects a `.cer`, a `.pem` or a placeholder;
+- an `https://` URL is accepted and downloaded by Electron Builder;
+- setting only some of `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and
+  `APPLE_TEAM_ID` fails with the names that are missing;
+- Apple credentials without a usable certificate also fail, because notarization
+  needs a signed app.
+
+With a valid certificate the job signs with the hardened runtime and the
+entitlements in `build/entitlements.mac.plist`, passes `-c.mac.notarize=true` when
+the Apple trio is present, then verifies `codesign --verify --deep --strict`,
+`spctl --assess` and `xcrun stapler validate` on every DMG.
+
+Failure behaviour:
+
+- **`MAC_CSC_LINK` absent** — unsigned build, warning, DMG still published. Users
+  must right-click → Open (or `xattr -dr com.apple.quarantine`).
+- **`MAC_CSC_LINK` present but invalid** — the macOS job stops at the signing
+  check with an `::error::` annotation naming the problem. Linux and Windows still
+  publish the release; the `publish` job warns that macOS is missing.
+
+#### 5. Verify a local build on a Mac
+
+```bash
+codesign -dv --verbose=4 "release/mac-arm64/AcidMade.app"
+spctl -a -vv "release/mac-arm64/AcidMade.app"
+xcrun stapler validate release/*.dmg
+```
+
+Expected: a `Developer ID Application` authority, `accepted` with
+`source=Notarized Developer ID`, and `The validate action worked`.
+
+Run the same validation the workflow uses, without pushing:
+
+```bash
+MAC_CSC_LINK="$(cat developerid.p12.b64)" \
+MAC_CSC_KEY_PASSWORD='…' \
+APPLE_ID='…' APPLE_APP_SPECIFIC_PASSWORD='…' APPLE_TEAM_ID='…' \
+node scripts/check-mac-signing.mjs
+```
 
 ### Local builds
 

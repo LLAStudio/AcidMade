@@ -47,8 +47,9 @@ Installers are published on the repository releases page:
 | Linux | `.AppImage` | `chmod +x` then run |
 | Linux | `.flatpak` | `flatpak install AcidMade.flatpak` |
 
-Builds are unsigned, so Windows SmartScreen and macOS Gatekeeper warn on first
-launch. That is expected for these builds; see section 20 for signing.
+Packaged builds are signed and notarized when the certificate secrets are
+configured. Without them the installers are unsigned and Windows SmartScreen or
+macOS Gatekeeper warns on first launch; see section 20 for the secrets.
 
 ### 2.2 From source
 
@@ -721,14 +722,24 @@ Signing is configured but optional. The workflow maps these repository secrets:
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password |
 | `APPLE_TEAM_ID` | Apple team identifier |
 
-When the Windows secrets exist, Electron Builder signs the installers. When the
-Apple secrets exist, the macOS job passes `-c.mac.notarize=true`, which signs
-with the hardened runtime and the entitlements in `build/entitlements.mac.plist`
-and notarizes the DMG. Afterwards the workflow verifies with `codesign --verify`,
+When the Windows secrets exist, Electron Builder signs the installers. On macOS,
+`scripts/check-mac-signing.mjs` runs before the build and turns the five secrets
+into two decisions: sign, and notarize. A valid certificate is signed with the
+hardened runtime and the entitlements in `build/entitlements.mac.plist`; with
+`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` also set, the DMG is
+notarized (`-c.mac.notarize=true`) and then checked with `codesign --verify`,
 `spctl --assess` and `xcrun stapler validate`.
 
-Without the secrets the build continues and logs a warning, so forks and local
-builds never fail on missing credentials.
+Only a **missing** `MAC_CSC_LINK` falls back to an unsigned build. A secret that
+is set but unusable — a folder, a placeholder, a `.cer`, a base64 string that is
+not a `.p12` — fails the macOS job with an explicit `::error::` naming the
+problem, so a misconfiguration never ships silently. Partial Apple credentials
+also fail, listing the missing secret names.
+
+Manual builds without credentials still work and log a warning, so forks never
+fail on missing secrets. The full export procedure, the exact content of each
+secret and the verification commands are in
+[desktop-packaging.md](desktop-packaging.md#macos).
 
 ## 21. Troubleshooting
 
