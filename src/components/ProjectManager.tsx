@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   Boxes,
   ChevronRight,
@@ -82,6 +82,8 @@ export function ProjectManager() {
   );
   const [deleteTarget, setDeleteTarget] = useState<{ path: string; kind: "file" | "dir" } | null>(null);
   const [entryBusy, setEntryBusy] = useState(false);
+  const [dragPath, setDragPath] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [fileData, setFileData] = useState<ProjectFileContent | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -287,6 +289,51 @@ export function ProjectManager() {
       setEntryBusy(false);
     }
   };
+
+  const moveEntry = async (source: string, into: string) => {
+    if (!selected || entryBusy) return;
+    const name = source.split("/").at(-1) ?? source;
+    const targetPath = into === "root" ? name : into + "/" + name;
+    if (targetPath === source) return;
+    if (into !== "root" && (into === source || into.startsWith(source + "/"))) {
+      flash("A folder cannot be moved inside itself");
+      return;
+    }
+    setEntryBusy(true);
+    try {
+      const result = await renameProjectEntry(selected, source, targetPath);
+      if (activePath === source) setActivePath(result.path);
+      if (selectedEntry?.path === source) {
+        setSelectedEntry({ path: result.path, kind: selectedEntry.kind });
+      }
+      flash("Moved res://" + source + " to " + (into === "root" ? "res://" : "res://" + into + "/"));
+      pushLog("AcidEngine", "ok", "moved res://" + source + " to res://" + targetPath);
+      await refreshTree();
+      refreshProjects();
+    } catch (error: unknown) {
+      flash("Move failed: " + String(error));
+    } finally {
+      setEntryBusy(false);
+    }
+  };
+
+  const dropHandlers = (target: string) => ({
+    onDragOver: (event: DragEvent) => {
+      if (!dragPath) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDropTarget(target);
+    },
+    onDragLeave: () => setDropTarget((current) => (current === target ? null : current)),
+    onDrop: (event: DragEvent) => {
+      if (!dragPath) return;
+      event.preventDefault();
+      const source = dragPath;
+      setDragPath(null);
+      setDropTarget(null);
+      void moveEntry(source, target);
+    },
+  });
 
   const openFolder = async () => {
     if (!disk) {
@@ -601,7 +648,18 @@ export function ProjectManager() {
                   <button
                     type="button"
                     onClick={() => setOpenFolders((current) => ({ ...current, [folder]: !open }))}
-                    className="flex h-[22px] w-full items-center gap-1.5 px-3 font-mono text-[10px] text-zinc-500 hover:bg-white/[0.03]"
+                    title={
+                      folder === "root"
+                        ? "Drop here to move a resource to the project root"
+                        : "Drop here to move a resource into " + folder
+                    }
+                    {...dropHandlers(folder)}
+                    className={cx(
+                      "flex h-[22px] w-full items-center gap-1.5 px-3 font-mono text-[10px] hover:bg-white/[0.03]",
+                      dropTarget === folder
+                        ? "bg-acid/[0.12] text-acid"
+                        : "text-zinc-500",
+                    )}
                   >
                     <ChevronRight
                       size={9}
@@ -622,12 +680,26 @@ export function ProjectManager() {
                             <button
                               key={"dir:" + file.path}
                               type="button"
+                              draggable={disk}
                               onClick={() => setSelectedEntry({ path: file.path, kind: "dir" })}
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = "move";
+                                event.dataTransfer.setData("text/plain", file.path);
+                                setDragPath(file.path);
+                              }}
+                              onDragEnd={() => {
+                                setDragPath(null);
+                                setDropTarget(null);
+                              }}
+                              {...dropHandlers(file.path)}
+                              title={"Drop here to move a resource into " + file.path}
                               className={cx(
                                 "flex h-[21px] w-full items-center gap-1.5 pl-8 pr-3 text-left font-mono text-[10px] transition-colors",
-                                selectedEntry?.path === file.path && selectedEntry.kind === "dir"
-                                  ? "bg-white/[0.05] text-zinc-100"
-                                  : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300",
+                                dropTarget === file.path
+                                  ? "bg-acid/[0.12] text-acid"
+                                  : selectedEntry?.path === file.path && selectedEntry.kind === "dir"
+                                    ? "bg-white/[0.05] text-zinc-100"
+                                    : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300",
                               )}
                             >
                               <Folder size={11} className="text-zinc-600" />
@@ -640,6 +712,16 @@ export function ProjectManager() {
                           <button
                             key={file.path}
                             type="button"
+                            draggable={disk}
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData("text/plain", file.path);
+                              setDragPath(file.path);
+                            }}
+                            onDragEnd={() => {
+                              setDragPath(null);
+                              setDropTarget(null);
+                            }}
                             onClick={() => void selectFile(file)}
                             onDoubleClick={() => {
                               if (CODE_FILES.some((entry) => entry.path === file.path)) {

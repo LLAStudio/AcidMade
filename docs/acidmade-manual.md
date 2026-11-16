@@ -134,6 +134,10 @@ working.
   exist and `..` segments are rejected.
 - **Delete** removes a file, or a folder with everything inside it, after a
   confirmation. The manifest timestamp is refreshed either way.
+- **Drag and drop** a file or a folder onto a folder header (or onto an empty
+  folder row) to move it there; dropping on the `root` header moves it back to
+  the project root. A folder cannot be dropped inside itself, and an existing
+  target name is refused instead of overwritten.
 
 ### 3.3 Resource browser
 
