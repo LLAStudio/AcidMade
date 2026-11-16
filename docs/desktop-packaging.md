@@ -95,8 +95,8 @@ failed jobs and let the next run attach the rest.
 Local tagging is still possible:
 
 ```bash
-git tag v1.0.2
-git push origin v1.0.2
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 ## Signing and notarization

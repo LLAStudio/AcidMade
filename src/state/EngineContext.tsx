@@ -111,7 +111,7 @@ const INITIAL_LOGS: LogEntry[] = [
     agent: "AcidEngine",
     channel: "console",
     level: "muted",
-    message: "AcidMade Engine v1.0.2.stable · scene runtime online · project northwind-analytics",
+    message: "AcidMade Engine v2.0.0.stable · scene runtime online · project northwind-analytics",
   },
   {
     id: uid("log"),

@@ -252,9 +252,9 @@ export function BottomDock() {
             {state.dockTab === "output" ? (
               <div className="select-text">
                 <div className="flex h-[16px] items-center gap-2 border-b border-line-soft/60 px-2 font-mono text-[8.5px] text-zinc-700">
-                  <span className="text-zinc-500">AcidMade Engine v1.0.2.stable.official</span>
+                  <span className="text-zinc-500">AcidMade Engine v2.0.0.stable.official</span>
                   <span>·</span>
-                  <span>scene runtime 1.0.2</span>
+                  <span>scene runtime 2.0.0</span>
                   <span className="ml-auto">https://acidmade.local</span>
                 </div>
                 {state.logs.length === 0 ? (
@@ -445,7 +445,7 @@ export function BottomDock() {
                 </button>
               )}
               <span className="text-zinc-800">|</span>
-              <span>acidmade 1.0.2</span>
+              <span>acidmade 2.0.0</span>
             </span>
           </div>
         </>
