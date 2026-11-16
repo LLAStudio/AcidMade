@@ -74,7 +74,7 @@ Installers are produced by the release workflow and attached to
 | Windows | `AcidMade-<version>-<arch>.msi` | For managed / group-policy installs |
 | Windows | `AcidMade-<version>-Portable.exe` | Single file, no installation |
 | macOS | `AcidMade-<version>-<arch>.dmg` | Drag to Applications |
-| macOS | `AcidMade-<arch>-app.zip` | Raw `AcidMade.app` bundle |
+| macOS | `AcidMade-<version>-<arch>-app.zip` | Raw `AcidMade.app` bundle |
 | Linux | `AcidMade-<version>-<arch>.AppImage` | `chmod +x` and run |
 | Linux | `AcidMade-<version>-<arch>.flatpak` | `flatpak install AcidMade-*.flatpak` |
 
@@ -206,16 +206,20 @@ pushed.
 ## How it is put together
 
 ```
-electron/           main process, preload bridge, on-disk project store
+electron/           main process, preload bridge, .acm project store
 server/             local agent runtime, AI proxy, tools
 src/components/     editor docks, panels, project manager
 src/data/           scene tree, resources, projects, build script
 src/lib/            persistence, runtime client, AI client, projects API
 src/state/          EngineContext reducer and actions
+build/              app icon and macOS entitlements
 docs/               the long-form documentation
-scripts/            dev launcher, icon generation
+scripts/            dev launcher, icon and PDF generation
+.github/            release workflow: tag, draft release, artifacts
 ```
 
+- **Project container** — `.acm`, a stored zip holding `acidmade.json` and every
+  resource, read and rewritten over IPC with no third-party archive code.
 - **Scene format** — `acid/1.0`, a JSON resource describing a node tree, scripts,
   signals and theme tokens.
 - **Node kinds** — `root`, `ui`, `component`, `api`, `data`, `agent`.
@@ -239,7 +243,11 @@ scripts/            dev launcher, icon generation
 | `npm run desktop` | Build, then open the Electron window |
 | `npm run desktop:dev` | Electron against the dev server |
 | `npm run icon` | Regenerate the app icon set |
+| `npm run docs:pdf` | Regenerate the documentation PDF |
 | `npm run package` | Package the current platform |
+| `npm run package:linux` | AppImage and Flatpak |
+| `npm run package:win` | Setup, MSI and portable builds |
+| `npm run package:mac` | DMG, zip and `.app` |
 | `npm run release` | Package and publish through Electron Builder |
 
 ## Documentation
@@ -253,8 +261,8 @@ scripts/            dev launcher, icon generation
   inspector, viewports, scripting, runtime, persistence, build semantics.
 - [ai-provider-setup.md](docs/ai-provider-setup.md) — providers, BYOK, attachments,
   staged scene actions, runtime proxy.
-- [file-system-and-resources.md](docs/file-system-and-resources.md) — `res://`,
-  the file dock, code groups, preview compositing.
+- [file-system-and-resources.md](docs/file-system-and-resources.md) — the `.acm`
+  container, `res://`, managing resources, code groups, preview compositing.
 - [desktop-packaging.md](docs/desktop-packaging.md) — installers, host
   requirements, Flatpak runtimes, signing, release flow.
 - [contributing-and-architecture.md](docs/contributing-and-architecture.md) —

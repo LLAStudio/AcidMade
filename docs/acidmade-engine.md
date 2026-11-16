@@ -124,7 +124,7 @@ Script resources are ordinary code files in the file system dock:
 - Components, agents and endpoints are code resources.
 - Prompts are prompt resources.
 
-The file system dock groups resources by folder and lets the operator open any resource as a tab.
+The file system dock groups resources by folder and lets the operator open any resource as a tab. On disk the resources live inside the project's `.acm` container, and the desktop build can add, rename, move (drag and drop) and delete them from the dock itself.
 
 ### Script view
 

@@ -636,6 +636,8 @@ a run is active.
   `src/state` for the reducer, `server` for runtime code, `scripts` for tooling.
 - **Resources are the contract.** `res://` paths name scenes, scripts, agents and
   config, and both the file dock and the AI context use them.
+- **One project, one file.** Everything a project owns lives inside its `.acm`
+  container; the manifest, the scene and the resources travel together.
 - **Status is visible.** Node and run status appear in the UI, not only in logs.
 - **AI is a copilot.** The provider proposes; the editor applies after
   confirmation.

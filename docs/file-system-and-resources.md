@@ -2,6 +2,52 @@
 
 AcidMade models its project as `res://` resources. The file system dock is the editor's resource browser, and the preview composites those resources into the scene.
 
+## Project container (`.acm`)
+
+A project is a single file with the `.acm` extension. Inside it is a zip archive
+with stored entries, so the container stays inspectable and repairable with
+ordinary archive tools. The reader also accepts deflated entries, so containers
+produced elsewhere open without conversion.
+
+| Entry | Required | Content |
+| --- | --- | --- |
+| `acidmade.json` | yes | Project manifest |
+| `scenes/MainApp.acid` | yes | Entry scene |
+| `acid.config.json` | no | Accent, density and radius tokens |
+| `agents/*.agent.ts` | no | Agent scripts |
+| `prompts/*.prompt` | no | Reusable agent prompts |
+| `README.md` | no | Human notes |
+
+Manifest fields: `format` (`acm/1.0`), `name`, `slug`, `branch`, `environment`,
+`scene`, `template`, `summary`, `createdAt`, `updatedAt`. Every write rewrites
+the archive and refreshes `updatedAt`; reads never mutate the file.
+
+Guards: entry paths are normalised and rejected when they contain `..`, and a
+resource larger than 2 MB is refused by the reader. Folder projects from older
+builds, with an `acidmade.json` at their root, keep opening and editing normally.
+
+## Managing resources
+
+The file dock is also a manager. In the desktop app, where the project is backed
+by a container on disk:
+
+- **New file** writes an entry with starter content per extension: an `acid/1.0`
+  scene skeleton for `.acid`, `{}` for `.json`, a short instruction for `.prompt`,
+  a heading for `.md`.
+- **New folder** writes a directory entry, so an empty folder stays visible.
+- **Rename** moves one resource, or every entry under a folder. The target must
+  not exist and `..` is rejected.
+- **Delete** removes a file, or a folder with everything inside it, after a
+  confirmation.
+- **Drag and drop** a resource onto a folder header or an empty folder row to move
+  it there; dropping on the `root` header moves it back to the project root. A
+  folder cannot be dropped inside its own subtree.
+
+All of these rewrite the archive through the same store, so the manifest
+timestamp and the container's checksums stay consistent. In the browser preview
+there is no filesystem access: the dock is read-only and the controls are
+disabled.
+
 ## Resource model
 
 A resource is a named file in the project's resource tree.
@@ -106,9 +152,10 @@ The preview renders the scene as a composited UI shell.
 
 ## Resource discovery
 
-The editor discovers resources from the project's resource list.
+The editor discovers resources from the project's resource list, backed by the
+`.acm` container when the project lives on disk.
 
-- The resource list is the source of truth for tab ids, file ids, and the file system dock contents.
+- The container's entries are the source of truth for tab ids, file ids, and the file system dock contents.
 - The provider context uses resource names and paths to describe the active scene.
 - The runtime resolves `res://` paths when it reads or writes resources.
 

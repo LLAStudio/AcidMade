@@ -4,14 +4,15 @@ This document is the project map. It describes the architecture, the editor conv
 
 ## Architecture
 
-AcidMade is a local editor and runtime pair.
+AcidMade is a local editor, runtime and desktop shell.
 
 - The editor is a React app in `src/`.
 - The runtime is a Node process in `server/`.
-- The developer glue is in `scripts/`.
+- The desktop shell is Electron in `electron/`.
+- The developer glue is in `scripts/` and the packaging assets are in `build/`.
 - The documentation is in `docs/`.
-- The build output is in `dist/`.
-- Local project metadata is in `.acidmade/`.
+- The build output is in `dist/`, packaged installers in `release/`.
+- Local project metadata is in `.acidmade/` (ignored by git).
 
 The editor and runtime communicate through the Vite proxy during development and through the same API surface in production.
 
@@ -31,6 +32,39 @@ The editor and runtime communicate through the Vite proxy during development and
 - `server/index.mjs` — runtime HTTP server.
 - `server/ai/chat.mjs` — provider proxy.
 - `server/runtime/` — runtime core and tools.
+
+### Desktop layout
+
+- `electron/main.mjs` — window, application menu, runtime spawn, IPC handlers.
+- `electron/preload.mjs` — `contextBridge` surface exposed as `window.acidmade`.
+- `electron/projects.mjs` — project store: list, create, open, tree, read/write,
+  create/rename/delete.
+- `electron/acm.mjs` — `.acm` container reader and writer (zip, CRC32, no
+  dependencies).
+- `electron-builder.yml` — packaging targets for Linux, Windows and macOS.
+- `build/` — generated icon and macOS entitlements.
+- `.github/workflows/release.yml` — tag, draft release and artifact publishing.
+
+### Project store IPC
+
+The renderer never touches the filesystem. It calls `window.acidmade.projects`,
+which maps to these channels, all handled in `electron/main.mjs`:
+
+| Channel | Purpose |
+| --- | --- |
+| `acidmade:projects:list` | Projects in the projects folder |
+| `acidmade:projects:create` | Create a `.acm` project |
+| `acidmade:projects:open-dialog` | Pick an existing `.acm` |
+| `acidmade:projects:reveal` | Show the file in the system file manager |
+| `acidmade:projects:tree` | Entries, each tagged as a file or a directory |
+| `acidmade:projects:read-file` | Read one entry |
+| `acidmade:projects:write-file` | Rewrite one entry |
+| `acidmade:projects:create-entry` | Add a file or a directory entry |
+| `acidmade:projects:rename-entry` | Move a file, or a folder prefix |
+| `acidmade:projects:delete-entry` | Remove a file, or a folder prefix |
+
+Every channel is validated in the store, not in the renderer: paths are
+normalised, traversal is rejected and collisions are refused.
 
 ### Editor layout
 
@@ -70,6 +104,12 @@ The editor and runtime communicate through the Vite proxy during development and
 | `npm run typecheck` | Type-check only. |
 | `npm run preview` | Preview the built frontend. |
 | `npm run runtime` | Start the runtime only. |
+| `npm run docs:pdf` | Regenerate `public/AcidMade-Documentation.pdf` from the manual. |
+| `npm run icon` | Regenerate the application icon. |
+| `npm run desktop` | Build the frontend and launch Electron. |
+| `npm run package:linux` | AppImage and Flatpak installers. |
+| `npm run package:win` | Setup, MSI and portable builds. |
+| `npm run package:mac` | DMG, zip and the `.app` bundle. |
 
 ### Developer scripts
 
@@ -77,17 +117,25 @@ The editor and runtime communicate through the Vite proxy during development and
 - `scripts/gen-readme.mjs` regenerates the README badge and build-status placeholders.
 - `scripts/gen-badge.mjs` writes the build badge.
 - `scripts/check-readme.mjs` checks the README for missing sections.
+- `scripts/gen-icon.mjs` renders the application icon used by the installers.
+- `scripts/gen-docs-pdf.mjs` turns `docs/acidmade-manual.md` into the PDF, with no
+  system dependency (no LaTeX, no headless browser).
 
 ## Test approach
 
-The project is tested by running the editor and checking the behavior you care about.
+The project is verified by running it and checking the behavior you care about.
 
 - Visual checks are done in the browser preview.
 - Build checks are done with `npm run build` and `npm run typecheck`.
 - Persistence checks are done by adding nodes and overrides, reloading, and resetting.
 - Provider checks are done with a real or mock provider through the runtime.
+- Container checks are done by creating a project in the desktop app, adding and
+  moving resources, saving, then reopening the `.acm` with an archive tool.
 
-There is no heavy automated test suite yet. When you add one, keep it focused on the behavior the project actually exposes.
+There is no heavy automated suite yet. The project store can be exercised in
+isolation with a small Node script against `createProjectStore`, which is how the
+container format is checked before packaging. When you add tests, keep them
+focused on the behavior the project actually exposes.
 
 ## Documentation conventions
 
@@ -101,6 +149,8 @@ There is no heavy automated test suite yet. When you add one, keep it focused on
 
 - Keep the UI dense and desktop-first.
 - Keep the scene format honest.
+- Keep the `.acm` container the single project unit; do not reintroduce scattered
+  project folders as the primary format.
 - Keep AI as a staging layer, not the executor.
 - Keep the default scene contract stable.
 - Keep keys out of files, commits, and localStorage.
