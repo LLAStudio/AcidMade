@@ -693,9 +693,10 @@ pushing a `v*` tag releases that tag.
 The tag and a draft release are created **before** any build starts, so a broken
 platform cannot prevent the release from existing. Builds upload whatever they
 produced even when an optional format (Flatpak, MSI) fails, and a final job runs
-with `always()` to attach those artifacts to the draft. The release is only
-un-drafted when Linux, Windows and macOS all succeed; otherwise it stays a draft
-with the artifacts that did build, and the run summary reports each platform.
+with `always()` to attach those artifacts to the draft. The release is un-drafted
+as soon as Linux and Windows succeed; macOS artifacts are included when that job
+passes, and its absence is reported instead of blocking the release. Every job
+times out after 30 minutes, and a newer push cancels the previous attempt.
 
 ### 20.1 Signing and notarization
 

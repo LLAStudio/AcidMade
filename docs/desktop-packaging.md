@@ -85,12 +85,14 @@ longer stop the release from existing:
 2. `linux`, `windows`, `macos` — build in parallel, uploading whatever they
    produced even when an optional format (Flatpak, MSI) fails.
 3. `publish` — runs with `if: always()`, attaches every collected artifact to the
-   draft, and un-drafts the release **only when all three platforms succeeded**.
+   draft, and un-drafts the release once **Linux and Windows succeeded**.
 
-If a platform fails, the release stays a draft with the artifacts from the
-successful platforms, and the run summary lists each platform's result. Publish
-it manually from the Releases page once the failure is fixed, or re-run the
-failed jobs and let the next run attach the rest.
+macOS artifacts are included when that job passes; a failing or unavailable
+macOS runner no longer holds the release back, and the run log says the release
+was published without them. Linux or Windows failing keeps the release as a
+draft with whatever the other platforms built. Every job has a 30-minute
+timeout, and a new push cancels the previous attempt so a stuck job cannot block
+the next release.
 
 Local tagging is still possible:
 

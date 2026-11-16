@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  # A new push supersedes the previous release attempt; otherwise a stuck
+  # platform job blocks every later release behind it.
+  cancel-in-progress: true
 
 jobs:
   prepare:
@@ -75,6 +77,7 @@ jobs:
     name: Linux · AppImage + Flatpak
     needs: prepare
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,6 +112,7 @@ jobs:
     name: Windows · Setup, MSI, Portable
     needs: prepare
     runs-on: windows-latest
+    timeout-minutes: 30
     env:
       CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
@@ -151,6 +155,8 @@ jobs:
     # macos-14 resolves to an arm64 runner this repository cannot use; macos-13
     # is the x64 image, and electron-builder still produces both architectures.
     runs-on: macos-13
+    # A queued macOS runner must never hold the release hostage.
+    timeout-minutes: 30
     env:
       CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -256,9 +262,14 @@ jobs:
           WINDOWS="${{ needs.windows.result }}"
           MACOS="${{ needs.macos.result }}"
           echo "linux=$LINUX windows=$WINDOWS macos=$MACOS"
-          if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ] && [ "$MACOS" = "success" ]; then
+          # Linux and Windows are required; macOS is published when it succeeds,
+          # and a macOS failure no longer blocks the release on its own.
+          if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ]; then
             gh release edit "$TAG" --draft=false
             echo "published=true" >> "$GITHUB_OUTPUT"
+            if [ "$MACOS" != "success" ]; then
+              echo "::warning::Published $TAG without macOS artifacts (macos=$MACOS). Add them by re-running the macOS job and re-running publish."
+            fi
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Release $TAG stays a draft: linux=$LINUX windows=$WINDOWS macos=$MACOS. Artifacts from the successful platforms are attached; publish it manually once the rest is green."
