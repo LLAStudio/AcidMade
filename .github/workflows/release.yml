@@ -202,20 +202,26 @@ jobs:
             status=$?
             if [ "$status" -ne 0 ]; then
               echo "::error::electron-builder exited with status $status"
-              tail -n 12 "$LOG" 2>/dev/null | while IFS= read -r line; do
-                echo "::error::${line}"
-              done
+              { grep -F '⨯' "$LOG" || true; tail -n 20 "$LOG"; } \
+                | awk '!seen[$0]++' \
+                | while IFS= read -r line; do echo "::error::${line}"; done
             fi
           }
           trap report EXIT
           echo "node $(node -v) on $(uname -m), disk:"
           df -h . | tail -1
           npm ls dmg-license --depth=0 || true
-          if [ -z "${CSC_LINK:-}" ]; then
-            echo "::warning::MAC_CSC_LINK is not set, so the app will be unsigned and Gatekeeper will block it."
-          fi
           ARGS=(--mac dmg zip dir "--${{ matrix.arch }}" --publish never
             -c.mac.artifactName='AcidMade-${version}-${arch}.${ext}')
+          if [ -n "${CSC_LINK:-}" ]; then
+            echo "Code signing certificate detected."
+          else
+            echo "::warning::MAC_CSC_LINK is not set, so the app will be unsigned and Gatekeeper will block it."
+            # Without a certificate electron-builder still attempts an ad-hoc
+            # hardened-runtime signature and fails before writing the DMG.
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            ARGS+=(-c.mac.hardenedRuntime=false)
+          fi
           if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
             echo "Apple credentials detected: notarizing."
             ARGS+=(-c.mac.notarize=true)
