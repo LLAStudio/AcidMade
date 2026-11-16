@@ -696,9 +696,9 @@ npm run package:win     # Setup.exe, MSI, portable
 npm run package:mac     # DMG and zip, plus the .app bundle
 ```
 
-The release workflow builds every platform on its native runner and publishes
+The release workflow builds each platform on its native runner and publishes
 the artifacts. Pushing to `main` releases the version in `package.json`;
-pushing a `v*` tag releases that tag.
+pushing a `v*` tag releases that tag and rebuilds every platform.
 
 The tag and a draft release are created **before** any build starts, so a broken
 platform cannot prevent the release from existing. A `verify-acm` job then
@@ -708,14 +708,20 @@ release while the draft is still empty, instead of being discovered after
 installers were produced. When it fails, the platform jobs are skipped and the
 release stays a draft.
 
+The same job reads the release assets and only builds what is missing. If the
+current version is already published with `AppImage`, `Setup.exe`, `Portable.exe`
+and both DMGs, a push to `main` rebuilds nothing: `prepare` and `verify-acm`
+run, finish in under a minute, and the release is left untouched. A missing DMG
+rebuilds only macOS, a missing `AppImage` only Linux; MSI, Flatpak and the
+`.app` zips are optional and never trigger a rebuild on their own.
+
 Builds upload whatever they produced even when an optional format (Flatpak, MSI)
-fails, and a final job runs with `always()` to attach those artifacts to the
-draft. Before publishing, the job checks that both expected DMGs (x64 and
-arm64) are among the artifacts; if one is missing it fails with the missing
-architectures and the release stays a draft. The release is un-drafted only
-when Linux, Windows and macOS all succeeded and both DMGs are present. Every
-job times out after 30 minutes (40 for the macOS matrix, 10 for the container
-check), and a newer push cancels the previous attempt.
+fails, and a final job attaches those artifacts to the draft, then checks the
+release assets (existing and new together). A missing DMG fails that job with
+the missing architectures and the release stays a draft; it is un-drafted only
+when the full required set is present. Every job times out after 30 minutes (40
+for the macOS matrix, 10 for the container check), and a newer push cancels the
+previous attempt.
 
 ### 20.1 Signing and notarization
 

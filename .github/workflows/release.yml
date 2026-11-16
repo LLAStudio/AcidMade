@@ -22,6 +22,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      build_linux: ${{ steps.plan.outputs.build_linux }}
+      build_windows: ${{ steps.plan.outputs.build_windows }}
+      build_macos: ${{ steps.plan.outputs.build_macos }}
+      needs_publish: ${{ steps.plan.outputs.needs_publish }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,6 +68,17 @@ jobs:
               --generate-notes
             echo "Draft release $TAG created."
           fi
+      - name: Decide what still needs building
+        # The release is the source of truth: a version already published with
+        # every required artifact rebuilds nothing, a missing DMG only rebuilds
+        # macOS. Tag pushes are explicit and force every platform.
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: node scripts/release-plan.mjs
       - name: Summary
         run: |
           {
@@ -71,6 +86,11 @@ jobs:
             echo ""
             echo "The tag exists before any build runs, so a failing platform can no"
             echo "longer prevent the release from being created."
+            echo ""
+            echo "Rebuild plan: linux=\`${{ steps.plan.outputs.build_linux }}\`, "
+            echo "windows=\`${{ steps.plan.outputs.build_windows }}\`, "
+            echo "macos=\`${{ steps.plan.outputs.build_macos }}\`, "
+            echo "publish=\`${{ steps.plan.outputs.needs_publish }}\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
   verify-acm:
@@ -92,6 +112,7 @@ jobs:
   linux:
     name: Linux · AppImage + Flatpak
     needs: [prepare, verify-acm]
+    if: needs.prepare.outputs.build_linux == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -127,6 +148,7 @@ jobs:
   windows:
     name: Windows · Setup, MSI, Portable
     needs: [prepare, verify-acm]
+    if: needs.prepare.outputs.build_windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -168,6 +190,7 @@ jobs:
   macos:
     name: macOS · DMG (${{ matrix.arch }})
     needs: [prepare, verify-acm]
+    if: needs.prepare.outputs.build_macos == 'true'
     # macos-13 was retired on 4 December 2025: jobs kept waiting for a runner
     # that no longer exists and never produced a DMG. macos-15-intel is the
     # supported x64 image and macos-15 is arm64, so one job builds each.
@@ -297,7 +320,7 @@ jobs:
   publish:
     name: Attach artifacts to the draft
     needs: [prepare, verify-acm, linux, windows, macos]
-    if: always() && needs.prepare.result == 'success'
+    if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.needs_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -318,35 +341,8 @@ jobs:
           if [ "$COUNT" = "0" ]; then
             echo "::warning::No artifacts were produced; the draft release keeps its tag and notes only."
           fi
-      - name: Check both macOS disk images are present
-        # A macOS job can fail, or upload only one architecture, while the
-        # release still looked complete. Both DMGs are mandatory: without them
-        # the job fails here and the draft is never un-drafted.
-        id: dmg
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.prepare.outputs.version }}"
-          MISSING=""
-          for ARCH in x64 arm64; do
-            if [ ! -s "artifacts/AcidMade-${VERSION}-${ARCH}.dmg" ]; then
-              MISSING="$MISSING $ARCH"
-            fi
-          done
-          if [ -n "$MISSING" ]; then
-            echo "::error::Missing macOS disk image(s) for:$MISSING"
-            echo "::error::Every release must ship AcidMade-${VERSION}-x64.dmg and AcidMade-${VERSION}-arm64.dmg; ${{ needs.prepare.outputs.tag }} stays a draft."
-            echo "::error::DMGs among the collected artifacts:"
-            find artifacts -type f -name '*.dmg' -printf '%f (%s bytes)\n' 2>/dev/null || echo "  (none)"
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-          echo "Both expected DMGs are present:"
-          for ARCH in x64 arm64; do
-            stat -c '%n (%s bytes)' "artifacts/AcidMade-${VERSION}-${ARCH}.dmg"
-          done
-          echo "present=true" >> "$GITHUB_OUTPUT"
       - name: Attach the artifacts
-        if: needs.verify-acm.result == 'success' && steps.dmg.outputs.present == 'true' && steps.collected.outputs.files != '0'
+        if: needs.verify-acm.result == 'success' && steps.collected.outputs.files != '0'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
@@ -354,36 +350,55 @@ jobs:
           draft: true
           allowUpdates: true
           files: artifacts/**/*
-      - name: Publish only when every platform succeeded
-        id: publish
+      - name: Check the release assets
+        # Decisions read the release itself, not this run's jobs: a run that only
+        # rebuilt macOS must still see the Linux and Windows assets from an
+        # earlier attempt, and a missing DMG must still stop the release.
+        id: assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ needs.prepare.outputs.tag }}"
-          VERIFY="${{ needs.verify-acm.result }}"
-          LINUX="${{ needs.linux.result }}"
-          WINDOWS="${{ needs.windows.result }}"
-          MACOS="${{ needs.macos.result }}"
-          echo "verify=$VERIFY linux=$LINUX windows=$WINDOWS macos=$MACOS"
-          # The container check gates the whole release: when it fails the builds
-          # are skipped and the draft must not be published, even if an older
-          # attempt left artifacts behind.
-          if [ "$VERIFY" != "success" ]; then
-            echo "::error::The .acm container check failed; $TAG stays a draft."
-            echo "published=false" >> "$GITHUB_OUTPUT"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          echo "Assets on $TAG:"
+          printf '%s\n' "$ASSETS"
+          has() { printf '%s\n' "$ASSETS" | grep -Fxq "$1"; }
+          DMG_MISSING=""
+          for ARCH in x64 arm64; do
+            has "AcidMade-${VERSION}-${ARCH}.dmg" || DMG_MISSING="$DMG_MISSING $ARCH"
+          done
+          if [ -n "$DMG_MISSING" ]; then
+            echo "::error::Missing macOS disk image(s) for:$DMG_MISSING"
+            echo "::error::Every release must ship AcidMade-${VERSION}-x64.dmg and AcidMade-${VERSION}-arm64.dmg; $TAG stays a draft."
+            echo "dmg=false" >> "$GITHUB_OUTPUT"
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "dmg=true" >> "$GITHUB_OUTPUT"
+          OTHER_MISSING=""
+          for FILE in "AcidMade-${VERSION}-Setup.exe" "AcidMade-${VERSION}-Portable.exe" "AcidMade-${VERSION}-x86_64.AppImage"; do
+            has "$FILE" || OTHER_MISSING="$OTHER_MISSING $FILE"
+          done
+          if [ -n "$OTHER_MISSING" ]; then
+            echo "::warning::Missing artifact(s):$OTHER_MISSING; $TAG stays a draft."
+            echo "complete=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Linux, Windows and macOS are all required. The DMG presence check
-          # above already failed the job when one disk image is missing, so this
-          # step only runs for a complete set.
-          if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ] && [ "$MACOS" = "success" ]; then
-            gh release edit "$TAG" --draft=false
-            echo "published=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Release $TAG stays a draft: linux=$LINUX windows=$WINDOWS macos=$MACOS. Artifacts from the successful platforms are attached; publish it manually once the rest is green."
-          fi
+          echo "complete=true" >> "$GITHUB_OUTPUT"
+      - name: Publish when the full artifact set is present
+        # The .acm check gates publication too: a container regression must not
+        # un-draft a release, even when every installer already exists.
+        id: publish
+        if: needs.verify-acm.result == 'success' && steps.assets.outputs.complete == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.prepare.outputs.tag }}"
+          gh release edit "$TAG" --draft=false
+          echo "published=true" >> "$GITHUB_OUTPUT"
       - name: Summary
         if: always()
         run: |
@@ -396,7 +411,7 @@ jobs:
             echo "| Linux | ${{ needs.linux.result }} |"
             echo "| Windows | ${{ needs.windows.result }} |"
             echo "| macOS | ${{ needs.macos.result }} |"
-            echo "| DMGs | ${{ steps.dmg.outputs.present }} |"
+            echo "| DMGs | ${{ steps.assets.outputs.dmg }} |"
             echo ""
             echo "Artifacts attached: ${{ steps.collected.outputs.files }}"
             echo "Published: ${{ steps.publish.outputs.published }}"
