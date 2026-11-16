@@ -156,6 +156,11 @@ If the Apple secrets are missing, the job logs a warning and produces an unsigne
 or signed-but-not-notarized build instead of failing. Users can still open it with
 right-click → Open (or `xattr -dr com.apple.quarantine`).
 
+`MAC_CSC_LINK` must hold a base64 `.p12`, an `https://` URL or a path that exists
+on the runner. A secret holding a folder or a placeholder is ignored with a
+warning: Electron Builder would otherwise stop on `<dir> not a file` while
+importing the certificate, before it writes any DMG.
+
 ### Local builds
 
 ```bash
