@@ -206,11 +206,11 @@ npm run package:mac      # DMG + zip (and the .app bundle)
 Artifacts are written to `release/`. Windows targets build on Windows, macOS
 targets need macOS, and Flatpak needs `flatpak-builder` plus the runtimes listed
 in [desktop-packaging.md](docs/desktop-packaging.md). The release workflow does
-all of it on native runners and publishes a GitHub release when a `v*` tag is
-pushed. Before any installer is built it runs `npm run verify:acm`, so a
-regression in the project container blocks the release instead of shipping. A
-push on `main` whose version is already published with its artifacts rebuilds
-nothing; only platforms missing a required artifact are rebuilt.
+all of it on native runners. Only a pushed `v*` tag matching `package.json`
+creates or publishes a release; a push on `main` just builds and runs
+`npm run verify:acm`, and never touches a release or its assets. A tag run
+builds only the platforms missing a required artifact, so existing binaries are
+never replaced by a later run.
 
 ## How it is put together
 

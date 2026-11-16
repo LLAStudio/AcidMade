@@ -2,16 +2,17 @@
 /**
  * Decides which platforms a release run still has to build.
  *
- * `prepare` creates the tag and the draft release before anything else, so by
- * the time this runs the release exists and its assets are the source of truth.
- * A push on `main` for a version that is already published with every required
- * artifact rebuilds nothing; a missing DMG only rebuilds macOS, and so on.
+ * `prepare` creates the draft release before anything else, so by the time this
+ * runs the release exists and its assets are the source of truth. A tag whose
+ * release already has every required artifact rebuilds nothing; a missing DMG
+ * only rebuilds macOS, and so on. This runs only for tag pushes: pushes on
+ * main verify the build and never reach the release.
  *
- * Tag pushes are explicit release intents and rebuild every platform.
+ * To ship new binaries, bump the version and push a new tag; an existing
+ * release is never rebuilt just because the workflow ran again.
  *
  * Env:
  *   VERSION, TAG       required, from prepare
- *   REF_TYPE           github.ref_type: "tag" forces a full rebuild
  *   RELEASE_JSON       optional JSON ({ assets: [{ name }], isDraft }) for tests
  *   GITHUB_OUTPUT      optional, receives build_linux/build_windows/build_macos/needs_publish
  */
@@ -20,7 +21,6 @@ import fs from "node:fs";
 
 const VERSION = (process.env.VERSION ?? "").trim();
 const TAG = (process.env.TAG ?? "").trim();
-const REF_TYPE = (process.env.REF_TYPE ?? "").trim();
 
 if (!VERSION || !TAG) {
   console.log("::error::VERSION and TAG are required to plan a release.");
@@ -53,12 +53,11 @@ const required = {
   macos: [`AcidMade-${VERSION}-x64.dmg`, `AcidMade-${VERSION}-arm64.dmg`],
 };
 
-const forced = REF_TYPE === "tag";
 const build = {};
 const missing = {};
 for (const [platform, files] of Object.entries(required)) {
   missing[platform] = files.filter((file) => !assets.has(file));
-  build[platform] = forced || missing[platform].length > 0;
+  build[platform] = missing[platform].length > 0;
 }
 
 // gh always returns a boolean; treat an unknown state as a draft so a release is
@@ -69,7 +68,6 @@ const needsPublish = isDraft || build.linux || build.windows || build.macos;
 for (const [platform, files] of Object.entries(missing)) {
   if (files.length > 0) console.log(`${platform}: missing ${files.join(", ")}`);
 }
-if (forced) console.log("Tag push: rebuilding every platform.");
 console.log(
   `Plan for ${TAG}: linux=${build.linux} windows=${build.windows} macos=${build.macos} ` +
     `draft=${isDraft} publish=${needsPublish}`,

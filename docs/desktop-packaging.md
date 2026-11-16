@@ -93,26 +93,26 @@ or a manual dispatch). The `prepare` job creates the tag `v<package.json version
 and a **draft** release before anything is built, so a broken platform can no
 longer stop the release from existing:
 
-1. `prepare` — tag + draft release with generated notes, then `scripts/release-plan.mjs`
-   reads the release assets and decides what is actually missing. A version
-   already published with every required artifact rebuilds nothing; a missing
-   DMG rebuilds only macOS, a missing `AppImage` only Linux, and so on. A push
-   of a `v*` tag is an explicit release intent and forces every platform.
-2. `verify-acm` — runs `npm run verify:acm`, which exercises the real store and
-   archive code: create, list, read, write, rename, duplicate, delete, reopen,
-   binary round-trip, corrupt archive skipped, and CRCs cross-checked with
-   Python's `zipfile`. Every platform job `needs` this job, so a container
-   regression stops the release before a single installer is built.
-3. `linux`, `windows`, `macos` — only the platforms selected by the plan build,
-   uploading whatever they produced even when an optional format (Flatpak, MSI)
-   fails. The macOS job is a matrix over `macos-15-intel` (x64 DMG) and
-   `macos-15` (arm64 DMG); `macos-13` was retired in December 2025 and jobs on
-   that label waited forever for a runner that no longer exists.
-4. `publish` — runs with `if: always()` when something was built or the release
-   is still a draft, attaches the collected artifacts, then reads the release
-   assets (existing and new together) and un-drafts it only when the full set is
-   present. A missing DMG fails the job with the architectures that are absent;
-   a failed `verify-acm` also prevents un-drafting.
+1. `verify` — runs on **every** push: `npm run build` (icon, docs PDF,
+   TypeScript and Vite) followed by `npm run verify:acm`, which exercises the
+   real store and archive code (create, read, write, rename, duplicate, delete,
+   reopen, binary round-trip, corrupt archive skipped, CRCs cross-checked with
+   Python's `zipfile`). A push on `main` stops here.
+2. `prepare` — **tag pushes only**. It rejects a tag that is not exactly
+   `v<package.json version>`, creates the draft release with generated notes,
+   then `scripts/release-plan.mjs` reads the release assets and decides what is
+   missing. Re-running a tag never rebuilds or overwrites an artifact that is
+   already attached; to ship new binaries, publish a new version.
+3. `linux`, `windows`, `macos` — tag only, and only the platforms selected by
+   the plan build, uploading whatever they produced even when an optional format
+   (Flatpak, MSI) fails. The macOS job is a matrix over `macos-15-intel` (x64
+   DMG) and `macos-15` (arm64 DMG); `macos-13` was retired in December 2025 and
+   jobs on that label waited forever for a runner that no longer exists.
+4. `publish` — tag only, runs with `if: always()` when something was built or
+   the release is still a draft, attaches the collected artifacts, then reads
+   the release assets (existing and new together) and un-drafts it only when the
+   full set is present. A missing DMG fails the job with the architectures that
+   are absent; a failed `verify` also prevents un-drafting.
 
 Required artifacts: `AcidMade-<version>-x86_64.AppImage`, `-Setup.exe`,
 `-Portable.exe`, `-x64.dmg` and `-arm64.dmg`. MSI, Flatpak and the `.app` zips
@@ -120,12 +120,14 @@ are optional: their builds are allowed to fail, so their absence never triggers
 a rebuild. A failed platform leaves the release a draft with whatever the other
 platforms built, and a run without both DMGs is red instead of quietly
 publishing an incomplete release. Build jobs time out after 30 minutes (40 for
-the macOS matrix, 10 for the container check), and a new push cancels the
-previous attempt so a stuck job cannot block the next release.
+the macOS matrix, 20 for `verify`), and a new push cancels the previous attempt
+so a stuck job cannot block the next release.
 
-A push on `main` whose version is already published and complete therefore
-finishes after `prepare` and `verify-acm`, in well under a minute, without
-touching the release or its binaries.
+A push on `main` never creates a tag, a release or an asset: it runs `verify`
+and nothing else. `workflow_dispatch` behaves the same way; releases exist only
+for pushed `v*` tags that match `package.json`. To ship a version: bump it
+(`npm version patch`), push the commit, then push the tag. A tag run whose
+release is already complete rebuilds nothing and leaves its assets untouched.
 
 Run the same gate locally before pushing:
 

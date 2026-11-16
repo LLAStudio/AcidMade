@@ -697,31 +697,29 @@ npm run package:mac     # DMG and zip, plus the .app bundle
 ```
 
 The release workflow builds each platform on its native runner and publishes
-the artifacts. Pushing to `main` releases the version in `package.json`;
-pushing a `v*` tag releases that tag and rebuilds every platform.
+the artifacts. Pushing to `main` only verifies the build: it compiles the app
+and runs the container checks, and never creates a tag, a release or an asset.
+Pushing a `v*` tag is the only way to release, and the tag must equal
+`v<package.json version>`.
 
-The tag and a draft release are created **before** any build starts, so a broken
-platform cannot prevent the release from existing. A `verify-acm` job then
-creates, edits, corrupts and reopens projects through the real container code
-before any platform build is allowed to start: a `.acm` regression stops the
-release while the draft is still empty, instead of being discovered after
-installers were produced. When it fails, the platform jobs are skipped and the
-release stays a draft.
-
-The same job reads the release assets and only builds what is missing. If the
-current version is already published with `AppImage`, `Setup.exe`, `Portable.exe`
-and both DMGs, a push to `main` rebuilds nothing: `prepare` and `verify-acm`
-run, finish in under a minute, and the release is left untouched. A missing DMG
-rebuilds only macOS, a missing `AppImage` only Linux; MSI, Flatpak and the
-`.app` zips are optional and never trigger a rebuild on their own.
+A tag run starts with `verify` (build + `.acm` checks) and only then creates or
+updates the draft release, so a broken build or container never reaches the
+release. `prepare` reads the release assets and only builds what is missing: a
+missing DMG rebuilds macOS, a missing `AppImage` Linux, and an already complete
+release is left untouched. MSI, Flatpak and the `.app` zips are optional and
+never trigger a rebuild on their own.
 
 Builds upload whatever they produced even when an optional format (Flatpak, MSI)
 fails, and a final job attaches those artifacts to the draft, then checks the
 release assets (existing and new together). A missing DMG fails that job with
 the missing architectures and the release stays a draft; it is un-drafted only
 when the full required set is present. Every job times out after 30 minutes (40
-for the macOS matrix, 10 for the container check), and a newer push cancels the
-previous attempt.
+for the macOS matrix, 20 for `verify`), and a newer push cancels the previous
+attempt.
+
+To ship a version: bump it, push the commit to `main` (verification only), then
+push the matching tag. Re-running a tag only fills artifacts that are missing;
+it never replaces binaries already attached to that release.
 
 ### 20.1 Signing and notarization
 

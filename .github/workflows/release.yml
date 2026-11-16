@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # Manual runs verify the build only; releases come from v* tags.
   workflow_dispatch:
 
 permissions:
@@ -17,7 +18,11 @@ concurrency:
 
 jobs:
   prepare:
-    name: Tag and draft release
+    name: Draft release
+    needs: verify
+    # Only a tag creates a release. A push on main finishes after `verify` and
+    # never touches the release, its assets or its tag.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -36,22 +41,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing $VERSION"
-      - name: Create the tag when it does not exist yet
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check the tag matches the package version
+        # The workflow never creates a tag: a release is exactly a pushed tag.
+        # Rejecting a mismatch keeps the assets tied to the commit the tag names.
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
-          git fetch --tags --force
-          if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
-            echo "Tag $TAG already exists."
-          else
-            # Lightweight tag on purpose: git tag -a needs an identity that the
-            # runner does not configure, and fails with exit code 128.
-            git tag "$TAG"
-            git push origin "refs/tags/$TAG"
-            echo "Tag $TAG created at $(git rev-parse --short HEAD)."
+          if [ "$TAG" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($TAG)."
+            echo "::error::Bump the version, push the commit, then push v<new version>. Nothing was released."
+            exit 1
           fi
+          echo "Releasing $TAG from $(git rev-parse --short HEAD)."
       - name: Create the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,23 +70,22 @@ jobs:
             echo "Draft release $TAG created."
           fi
       - name: Decide what still needs building
-        # The release is the source of truth: a version already published with
+        # The release is the source of truth: a tag whose release already has
         # every required artifact rebuilds nothing, a missing DMG only rebuilds
-        # macOS. Tag pushes are explicit and force every platform.
+        # macOS. This job never runs for a push on main.
         id: plan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
-          REF_TYPE: ${{ github.ref_type }}
         run: node scripts/release-plan.mjs
       - name: Summary
         run: |
           {
-            echo "### Draft release ${{ steps.version.outputs.tag }}"
+            echo "### Release ${{ steps.version.outputs.tag }}"
             echo ""
-            echo "The tag exists before any build runs, so a failing platform can no"
-            echo "longer prevent the release from being created."
+            echo "Triggered by the tag ${{ github.ref_name }}; pushes on main only verify"
+            echo "the build and never touch a release."
             echo ""
             echo "Rebuild plan: linux=\`${{ steps.plan.outputs.build_linux }}\`, "
             echo "windows=\`${{ steps.plan.outputs.build_windows }}\`, "
@@ -93,25 +93,27 @@ jobs:
             echo "publish=\`${{ steps.plan.outputs.needs_publish }}\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  verify-acm:
-    name: Verify the .acm container
-    needs: prepare
+  verify:
+    name: Verify the build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Runs before any platform build: a regression in the project container must
-    # stop the release while the draft is still empty, not after installers exist.
+    timeout-minutes: 20
+    # Runs on every push, including main. On a tag it also gates the release:
+    # a build or container regression stops the run before a draft exists.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - run: npm ci
+      - name: Build the app
+        run: npm run build
       - name: Create, edit, corrupt and reopen projects
         run: npm run verify:acm
 
   linux:
     name: Linux · AppImage + Flatpak
-    needs: [prepare, verify-acm]
+    needs: [prepare, verify]
     if: needs.prepare.outputs.build_linux == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -147,7 +149,7 @@ jobs:
 
   windows:
     name: Windows · Setup, MSI, Portable
-    needs: [prepare, verify-acm]
+    needs: [prepare, verify]
     if: needs.prepare.outputs.build_windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
@@ -189,7 +191,7 @@ jobs:
 
   macos:
     name: macOS · DMG (${{ matrix.arch }})
-    needs: [prepare, verify-acm]
+    needs: [prepare, verify]
     if: needs.prepare.outputs.build_macos == 'true'
     # macos-13 was retired on 4 December 2025: jobs kept waiting for a runner
     # that no longer exists and never produced a DMG. macos-15-intel is the
@@ -319,7 +321,7 @@ jobs:
 
   publish:
     name: Attach artifacts to the draft
-    needs: [prepare, verify-acm, linux, windows, macos]
+    needs: [prepare, verify, linux, windows, macos]
     if: always() && needs.prepare.result == 'success' && needs.prepare.outputs.needs_publish == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -342,7 +344,7 @@ jobs:
             echo "::warning::No artifacts were produced; the draft release keeps its tag and notes only."
           fi
       - name: Attach the artifacts
-        if: needs.verify-acm.result == 'success' && steps.collected.outputs.files != '0'
+        if: needs.verify.result == 'success' && steps.collected.outputs.files != '0'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
@@ -391,7 +393,7 @@ jobs:
         # The .acm check gates publication too: a container regression must not
         # un-draft a release, even when every installer already exists.
         id: publish
-        if: needs.verify-acm.result == 'success' && steps.assets.outputs.complete == 'true'
+        if: needs.verify.result == 'success' && steps.assets.outputs.complete == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -407,7 +409,7 @@ jobs:
             echo ""
             echo "| Platform | Result |"
             echo "| --- | --- |"
-            echo "| .acm | ${{ needs.verify-acm.result }} |"
+            echo "| Verify | ${{ needs.verify.result }} |"
             echo "| Linux | ${{ needs.linux.result }} |"
             echo "| Windows | ${{ needs.windows.result }} |"
             echo "| macOS | ${{ needs.macos.result }} |"
