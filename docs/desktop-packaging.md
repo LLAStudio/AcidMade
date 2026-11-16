@@ -100,8 +100,8 @@ a stuck job cannot block the next release.
 Local tagging is still possible:
 
 ```bash
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.0.1
+git push origin v2.0.1
 ```
 
 ## Signing and notarization

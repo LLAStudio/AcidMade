@@ -288,7 +288,7 @@ export default defineEndpoint({
     `{
   "project": "northwind-analytics",
   "runtime": {
-    "engine": "2.0.0",
+    "engine": "2.0.1",
     "sceneFormat": "acid/1.0",
     "agentPlanner": "local-reference",
     "workspace": ".acidmade/runs"
