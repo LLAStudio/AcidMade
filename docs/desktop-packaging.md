@@ -94,20 +94,33 @@ and a **draft** release before anything is built, so a broken platform can no
 longer stop the release from existing:
 
 1. `prepare` — tag + draft release with generated notes.
-2. `linux`, `windows`, `macos` — build in parallel, uploading whatever they
+2. `verify-acm` — runs `npm run verify:acm`, which exercises the real store and
+   archive code: create, list, read, write, rename, duplicate, delete, reopen,
+   binary round-trip, corrupt archive skipped, and CRCs cross-checked with
+   Python's `zipfile`. Every platform job `needs` this job, so a container
+   regression stops the release before a single installer is built.
+3. `linux`, `windows`, `macos` — build in parallel, uploading whatever they
    produced even when an optional format (Flatpak, MSI) fails. The macOS job is
    a matrix over `macos-15-intel` (x64 DMG) and `macos-15` (arm64 DMG);
    `macos-13` was retired in December 2025 and jobs on that label waited forever
    for a runner that no longer exists.
-3. `publish` — runs with `if: always()`, attaches every collected artifact to the
-   draft, and un-drafts the release once **Linux and Windows succeeded**.
+4. `publish` — runs with `if: always()`, attaches every collected artifact to the
+   draft, and un-drafts the release once **Linux and Windows succeeded**. A
+   failed `verify-acm` keeps the release a draft with no artifacts attached,
+   even if an earlier attempt left some behind.
 
 macOS artifacts are included when that job passes; a failing or unavailable
 macOS runner no longer holds the release back, and the run log says the release
 was published without them. Linux or Windows failing keeps the release as a
 draft with whatever the other platforms built. Build jobs time out after 30
-minutes (40 for the macOS matrix), and a new push cancels the previous attempt so
-a stuck job cannot block the next release.
+minutes (40 for the macOS matrix, 10 for the container check), and a new push
+cancels the previous attempt so a stuck job cannot block the next release.
+
+Run the same gate locally before pushing:
+
+```bash
+npm run verify:acm
+```
 
 Local tagging is still possible:
 

@@ -73,9 +73,25 @@ jobs:
             echo "longer prevent the release from being created."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  verify-acm:
+    name: Verify the .acm container
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Runs before any platform build: a regression in the project container must
+    # stop the release while the draft is still empty, not after installers exist.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Create, edit, corrupt and reopen projects
+        run: npm run verify:acm
+
   linux:
     name: Linux · AppImage + Flatpak
-    needs: prepare
+    needs: [prepare, verify-acm]
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -110,7 +126,7 @@ jobs:
 
   windows:
     name: Windows · Setup, MSI, Portable
-    needs: prepare
+    needs: [prepare, verify-acm]
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -151,7 +167,7 @@ jobs:
 
   macos:
     name: macOS · DMG (${{ matrix.arch }})
-    needs: prepare
+    needs: [prepare, verify-acm]
     # macos-13 was retired on 4 December 2025: jobs kept waiting for a runner
     # that no longer exists and never produced a DMG. macos-15-intel is the
     # supported x64 image and macos-15 is arm64, so one job builds each.
@@ -276,7 +292,7 @@ jobs:
 
   publish:
     name: Attach artifacts to the draft
-    needs: [prepare, linux, windows, macos]
+    needs: [prepare, verify-acm, linux, windows, macos]
     if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -299,7 +315,7 @@ jobs:
             echo "::warning::No artifacts were produced; the draft release keeps its tag and notes only."
           fi
       - name: Attach the artifacts
-        if: steps.collected.outputs.files != '0'
+        if: needs.verify-acm.result == 'success' && steps.collected.outputs.files != '0'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
@@ -314,10 +330,19 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ needs.prepare.outputs.tag }}"
+          VERIFY="${{ needs.verify-acm.result }}"
           LINUX="${{ needs.linux.result }}"
           WINDOWS="${{ needs.windows.result }}"
           MACOS="${{ needs.macos.result }}"
-          echo "linux=$LINUX windows=$WINDOWS macos=$MACOS"
+          echo "verify=$VERIFY linux=$LINUX windows=$WINDOWS macos=$MACOS"
+          # The container check gates the whole release: when it fails the builds
+          # are skipped and the draft must not be published, even if an older
+          # attempt left artifacts behind.
+          if [ "$VERIFY" != "success" ]; then
+            echo "::error::The .acm container check failed; $TAG stays a draft."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Linux and Windows are required; macOS is published when it succeeds,
           # and a macOS failure no longer blocks the release on its own.
           if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ]; then
@@ -338,6 +363,7 @@ jobs:
             echo ""
             echo "| Platform | Result |"
             echo "| --- | --- |"
+            echo "| .acm | ${{ needs.verify-acm.result }} |"
             echo "| Linux | ${{ needs.linux.result }} |"
             echo "| Windows | ${{ needs.windows.result }} |"
             echo "| macOS | ${{ needs.macos.result }} |"

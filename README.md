@@ -207,7 +207,8 @@ Artifacts are written to `release/`. Windows targets build on Windows, macOS
 targets need macOS, and Flatpak needs `flatpak-builder` plus the runtimes listed
 in [desktop-packaging.md](docs/desktop-packaging.md). The release workflow does
 all of it on native runners and publishes a GitHub release when a `v*` tag is
-pushed.
+pushed. Before any installer is built it runs `npm run verify:acm`, so a
+regression in the project container blocks the release instead of shipping.
 
 ## How it is put together
 

@@ -17,6 +17,7 @@
     "build": "tsc -b && vite build",
     "docs:pdf": "node scripts/gen-docs-pdf.mjs",
     "typecheck": "tsc -b --noEmit",
+    "verify:acm": "node scripts/verify-acm.mjs",
     "preview": "vite preview",
     "desktop": "npm run build && electron .",
     "desktop:dev": "ACIDMADE_DEV_URL=http://127.0.0.1:3000 electron .",

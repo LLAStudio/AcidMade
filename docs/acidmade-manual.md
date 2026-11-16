@@ -701,12 +701,19 @@ the artifacts. Pushing to `main` releases the version in `package.json`;
 pushing a `v*` tag releases that tag.
 
 The tag and a draft release are created **before** any build starts, so a broken
-platform cannot prevent the release from existing. Builds upload whatever they
-produced even when an optional format (Flatpak, MSI) fails, and a final job runs
-with `always()` to attach those artifacts to the draft. The release is un-drafted
-as soon as Linux and Windows succeed; macOS artifacts are included when that job
-passes, and its absence is reported instead of blocking the release. Every job
-times out after 30 minutes, and a newer push cancels the previous attempt.
+platform cannot prevent the release from existing. A `verify-acm` job then
+creates, edits, corrupts and reopens projects through the real container code
+before any platform build is allowed to start: a `.acm` regression stops the
+release while the draft is still empty, instead of being discovered after
+installers were produced. When it fails, the platform jobs are skipped and the
+release stays a draft.
+
+Builds upload whatever they produced even when an optional format (Flatpak, MSI)
+fails, and a final job runs with `always()` to attach those artifacts to the
+draft. The release is un-drafted as soon as Linux and Windows succeed; macOS
+artifacts are included when that job passes, and its absence is reported instead
+of blocking the release. Every job times out after 30 minutes (10 for the
+container check), and a newer push cancels the previous attempt.
 
 ### 20.1 Signing and notarization
 
