@@ -197,19 +197,23 @@ jobs:
       - run: npm ci
       - run: npm run icon
       - run: npm run build
-      - name: Ensure the DMG helper is installed
-        # dmg-license is only an optional dependency of dmg-builder, and the
-        # module is required at load time for every macOS target, not just for
-        # licensed DMGs. A lockfile generated on Linux can leave it out, and the
-        # build then dies with "Cannot find module 'dmg-license'" before it
-        # writes anything.
+      - name: Check the DMG helper is available
+        # dmg-license is an optional darwin dependency of dmg-builder, required
+        # at load time for every macOS target, not just licensed DMGs. The
+        # lockfile resolves it for darwin, so npm ci must install it here.
+        # Installing it in this step would mutate node_modules after npm ci and
+        # hide the lockfile problem until the next clean install; fail instead.
         run: |
           set -euo pipefail
-          if node -e "require.resolve('dmg-license')" 2>/dev/null; then
-            echo "dmg-license is already installed."
-          else
-            npm install --no-save --no-package-lock dmg-license@^1.0.11
+          RESOLVED=$(node -p "require.resolve('dmg-license')" 2>/dev/null || true)
+          if [ -n "$RESOLVED" ]; then
+            echo "dmg-license resolved at $RESOLVED"
+            exit 0
           fi
+          echo "::error::dmg-license is missing, so electron-builder cannot build the DMG."
+          echo "::error::It is an optional darwin dependency of dmg-builder and must be installed by npm ci from package-lock.json."
+          echo "::error::Check that package-lock.json still contains node_modules/dmg-license (os: darwin), then rerun npm ci on macOS. Do not install it in CI."
+          exit 1
       - name: Check the macOS signing inputs
         # A wrong MAC_CSC_LINK fails here, with the reason, instead of shipping
         # a DMG that Gatekeeper blocks without explanation.
