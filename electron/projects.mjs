@@ -7,6 +7,7 @@
  *
  * No Electron imports here, so the whole thing is testable with plain Node.
  */
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readAcm, text as acmText, writeAcm } from "./acm.mjs";
@@ -198,6 +199,60 @@ async function fileExists(target) {
     return true;
   } catch {
     return false;
+  }
+}
+
+function tempPathFor(target) {
+  return path.join(
+    path.dirname(target),
+    `.${path.basename(target)}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`,
+  );
+}
+
+async function writeAndSync(filePath, data) {
+  const handle = await fs.open(filePath, "wx");
+  try {
+    await handle.writeFile(data);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Replaces a project file without ever exposing a partially written archive.
+ *
+ * The bytes go to a temporary file in the same directory, are flushed, and the
+ * previous archive is copied to `<name>.acm.bak` before the temporary file is
+ * renamed over the target. A crash leaves either the old file or the new one,
+ * never a truncated one, and the rename is atomic within a filesystem.
+ */
+async function writeAcmFile(target, buffer) {
+  const temp = tempPathFor(target);
+  try {
+    await writeAndSync(temp, buffer);
+    const previous = await fs.readFile(target).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (previous) {
+      const backup = target + ".bak";
+      const backupTemp = tempPathFor(backup);
+      try {
+        await writeAndSync(backupTemp, previous);
+        await fs.rename(backupTemp, backup);
+      } finally {
+        await fs.rm(backupTemp, { force: true }).catch(() => {});
+      }
+    }
+    await fs.rename(temp, target);
+    const directory = await fs.open(path.dirname(target), "r").catch(() => null);
+    if (directory) {
+      await directory.sync().catch(() => {});
+      await directory.close().catch(() => {});
+    }
+  } finally {
+    await fs.rm(temp, { force: true }).catch(() => {});
   }
 }
 
@@ -428,7 +483,7 @@ export function createProjectStore({ rootDir, seed = true }) {
       data: ["# " + clean, "", meta.summary, "", "Open this .acm file in AcidMade.", ""].join("\n"),
     });
 
-    await fs.writeFile(filePath, writeAcm(entries));
+    await writeAcmFile(filePath, writeAcm(entries));
     const stats = await fs.stat(filePath);
     return recordFromManifest(manifest, filePath, entries.length, stats);
   }
@@ -448,7 +503,7 @@ export function createProjectStore({ rootDir, seed = true }) {
         const created = manifestDefaults(path.basename(resolved, EXTENSION));
         const entries = [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data }));
         entries.push({ path: MANIFEST, data: JSON.stringify(created, null, 2) + "\n" });
-        await fs.writeFile(resolved, writeAcm(entries));
+        await writeAcmFile(resolved, writeAcm(entries));
         return recordFromManifest(created, resolved, entries.length, await fs.stat(resolved));
       }
       return recordFromManifest(manifest, resolved, archive.size, stats);
@@ -538,7 +593,7 @@ export function createProjectStore({ rootDir, seed = true }) {
     if (existing) existing.data = payload;
     else entries.push({ path: entryPath, data: payload });
 
-    await fs.writeFile(resolved, writeAcm(entries));
+    await writeAcmFile(resolved, writeAcm(entries));
     const fileStats = await fs.stat(resolved);
     return { size: payload.length, mtime: fileStats.mtime.toISOString() };
   }
@@ -579,7 +634,7 @@ export function createProjectStore({ rootDir, seed = true }) {
       manifest.updatedAt = new Date().toISOString();
       manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
     }
-    await fs.writeFile(resolved, writeAcm(entries));
+    await writeAcmFile(resolved, writeAcm(entries));
     return { path: target, kind };
   }
 
@@ -623,7 +678,7 @@ export function createProjectStore({ rootDir, seed = true }) {
       manifest.updatedAt = new Date().toISOString();
       manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
     }
-    await fs.writeFile(resolved, writeAcm(renamed));
+    await writeAcmFile(resolved, writeAcm(renamed));
     return { path: target, entries: renamed.length };
   }
 
@@ -665,7 +720,7 @@ export function createProjectStore({ rootDir, seed = true }) {
       manifest.updatedAt = new Date().toISOString();
       manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
     }
-    await fs.writeFile(resolved, writeAcm(next));
+    await writeAcmFile(resolved, writeAcm(next));
     return { path: target, entries: copies.length };
   }
 
@@ -696,7 +751,7 @@ export function createProjectStore({ rootDir, seed = true }) {
       manifest.updatedAt = new Date().toISOString();
       manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
     }
-    await fs.writeFile(resolved, writeAcm(keep));
+    await writeAcmFile(resolved, writeAcm(keep));
     return { path: target, removed: entries.length - keep.length };
   }
 

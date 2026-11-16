@@ -125,5 +125,44 @@ const roundTrip = readAcm(writeAcm([{ path: "blob.bin", data: binary }]));
 assert.deepEqual([...roundTrip.get("blob.bin")], [...binary], "buffer round-trips exactly");
 ok("binary payloads round-trip exactly", "9 bytes incl. invalid UTF-8");
 
+// 9. Saves are atomic: the previous archive is kept as .bak, no temporary file
+// survives, and a save whose backup cannot be written leaves the target intact.
+const atomicTarget = path.join(root, "orbital-console.acm");
+const beforeAtomic = await fs.readFile(atomicTarget);
+await store.writeFile(atomicTarget, "notes/atomic.md", "# Atomic\n\nNo truncation.\n");
+const afterAtomic = await fs.readFile(atomicTarget);
+const backup = await fs.readFile(atomicTarget + ".bak");
+assert.deepEqual(backup, beforeAtomic, ".bak is byte-identical to the previous archive");
+assert.ok(isAcm(backup), ".bak is still a valid .acm");
+assert.ok(readAcm(backup).has("notes/roadmap.md"), ".bak keeps the previous resources");
+assert.ok(!readAcm(backup).has("notes/atomic.md"), ".bak does not contain the new write");
+assert.ok(isAcm(afterAtomic), "the target is still a valid archive after the save");
+assert.ok(readAcm(afterAtomic).has("notes/atomic.md"), "the target contains the new write");
+assert.deepEqual(
+  (await fs.readdir(root)).filter((name) => name.endsWith(".tmp")),
+  [],
+  "no temporary file survives a successful save",
+);
+assert.equal((await store.list()).length, 3, ".bak files do not appear as projects");
+
+const backupPath = atomicTarget + ".bak";
+await fs.rm(backupPath, { force: true });
+await fs.mkdir(backupPath);
+let saveFailed = false;
+await store.writeFile(atomicTarget, "notes/never.md", "x").catch(() => {
+  saveFailed = true;
+});
+assert.ok(saveFailed, "a save whose backup cannot be written fails");
+const afterFailure = await fs.readFile(atomicTarget);
+assert.deepEqual(afterFailure, afterAtomic, "a failed save leaves the target untouched");
+assert.ok(!readAcm(afterFailure).has("notes/never.md"), "a failed save never lands");
+assert.deepEqual(
+  (await fs.readdir(root)).filter((name) => name.endsWith(".tmp")),
+  [],
+  "a failed save leaves no temporary file",
+);
+await fs.rm(backupPath, { recursive: true, force: true });
+ok("saves are atomic with a .bak", "previous archive preserved, failed save harmless");
+
 await fs.rm(root, { recursive: true, force: true });
 console.log(JSON.stringify({ ok: true, checks: results }, null, 2));
