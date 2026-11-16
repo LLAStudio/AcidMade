@@ -41,6 +41,10 @@ interface ProjectsBridge {
   list(): Promise<{ root: string; projects: DiskProject[] }>;
   create(input: CreateProjectInput): Promise<DiskProject>;
   openDialog(): Promise<DiskProject | null>;
+  openPath(projectPath: string): Promise<DiskProject>;
+  takePending(): Promise<string | null>;
+  markReady(): Promise<boolean>;
+  onOpenFile(callback: (projectPath: string) => void): () => void;
   reveal(projectPath: string): Promise<void>;
   tree(projectPath: string): Promise<ProjectFileInfo[]>;
   readFile(projectPath: string, relative: string): Promise<ProjectFileContent>;
@@ -165,6 +169,29 @@ export async function openProjectFile(): Promise<Project | null> {
   if (!api) return null;
   const record = await api.openDialog();
   return record ? toProject(record) : null;
+}
+
+export async function openProjectByPath(projectPath: string): Promise<Project> {
+  const api = projectsBridge();
+  if (!api) throw new Error("opening a project file requires the desktop app");
+  return toProject(await api.openPath(projectPath));
+}
+
+/** A .acm opened before the window existed, consumed once at startup. */
+export async function takePendingProject(): Promise<string | null> {
+  const api = projectsBridge();
+  if (!api) return null;
+  return api.takePending();
+}
+
+export function markProjectBridgeReady(): void {
+  void projectsBridge()?.markReady();
+}
+
+export function onProjectFileOpen(callback: (projectPath: string) => void): () => void {
+  const api = projectsBridge();
+  if (!api) return () => {};
+  return api.onOpenFile(callback);
 }
 
 export async function revealProject(project: Project): Promise<boolean> {

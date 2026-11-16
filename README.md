@@ -111,6 +111,9 @@ live under `Documents/AcidMade` (override with `ACIDMADE_PROJECTS_DIR`).
 - **Open project…** picks an existing `.acm` file; archives without a manifest get
   one added on open.
 - **Reveal** shows the `.acm` file in the system file manager.
+- **Double-click** a `.acm` in the file manager, or pass it as an argument, and
+  the app opens that project directly in the editor instead of the project list.
+  The extension is registered by the Windows, macOS and Linux packages.
 - **Read/write** selecting a resource reads its entry from the container; editing
   and `Ctrl`/`Cmd`+`S` rewrite the archive and bump the manifest timestamp.
 - **Manage** resources without leaving the app: new file, new folder, rename

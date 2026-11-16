@@ -122,6 +122,9 @@ working.
 - **Open project…** picks an existing `.acm` file; a manifest is added when the
   archive does not have one.
 - **Reveal** shows the `.acm` file in the system file manager.
+- **Double-click** a `.acm` in the file manager, or pass it as an argument, and
+  the app opens that project straight into the editor instead of the project
+  list. A second double-click while AcidMade is running reuses the open window.
 - Selecting a resource reads its entry from the container. `Ctrl`/`Cmd`+`S`
   rewrites the archive and updates `updatedAt` in the manifest. The browser
   preview is read-only.
@@ -199,6 +202,9 @@ Behaviour:
   larger than 2 MB is refused by the reader.
 - A `.acm` without a manifest is adopted: one is generated on open and written
   back on the next save.
+- The `.acm` extension is associated with AcidMade by the packaged builds, so a
+  project can be opened from the desktop, a file manager or a terminal without
+  going through **Open project…** first.
 - Folder projects from older builds still open and edit normally.
 
 ## 4. Workspace layout

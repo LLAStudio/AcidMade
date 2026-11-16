@@ -18,6 +18,18 @@ editor from disk.
 
 All targets are declared in `electron-builder.yml`.
 
+## File association
+
+`fileAssociations` in `electron-builder.yml` registers `.acm` as an AcidMade
+project. The NSIS installer and the MSI write the Windows registry entry, macOS
+puts a `CFBundleDocumentTypes` entry in the bundle, and the Linux packages ship
+a desktop entry with the `application/x-acidmade-project` MIME type. With the
+association in place, double-clicking a project, or passing its path on the
+command line, opens it directly in the editor.
+
+The portable `.exe` and an AppImage that was not integrated into the desktop do
+not register the extension; use **Open project…** there.
+
 ## Build locally
 
 ```bash

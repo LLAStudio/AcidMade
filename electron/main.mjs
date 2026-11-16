@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProjectStore } from "./projects.mjs";
+import { projectPathFromArgv } from "./open-with.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(here, "..");
@@ -12,6 +13,10 @@ const isDev = Boolean(devUrl);
 
 let mainWindow = null;
 let runtimeProcess = null;
+// A .acm opened before the renderer is listening waits here, then moves to the
+// window as soon as the renderer says it is ready.
+let pendingProjectPath = null;
+let rendererReady = false;
 
 let projectStore = null;
 
@@ -46,6 +51,27 @@ function registerProjectIpc() {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return store().open(result.filePaths[0]);
+  });
+
+  ipcMain.handle("acidmade:projects:open-path", (_event, projectPath) =>
+    store().open(projectPath),
+  );
+
+  // The renderer pulls a project opened during startup, then announces itself
+  // so later double-clicks can be pushed straight to the window.
+  ipcMain.handle("acidmade:projects:take-pending", () => {
+    const next = pendingProjectPath;
+    pendingProjectPath = null;
+    return next;
+  });
+
+  ipcMain.handle("acidmade:projects:renderer-ready", () => {
+    rendererReady = true;
+    if (pendingProjectPath && mainWindow) {
+      mainWindow.webContents.send("acidmade:projects:open-file", pendingProjectPath);
+      pendingProjectPath = null;
+    }
+    return true;
   });
 
   ipcMain.handle("acidmade:projects:reveal", (_event, projectPath) => {
@@ -168,6 +194,25 @@ function buildMenu(window) {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function focusWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+// Called for a double-clicked .acm, a file passed on the command line, and the
+// macOS open-file event. Before the renderer is ready the path is queued.
+function announceProject(filePath) {
+  if (!filePath) return;
+  focusWindow();
+  if (mainWindow && rendererReady) {
+    mainWindow.webContents.send("acidmade:projects:open-file", filePath);
+    return;
+  }
+  pendingProjectPath = filePath;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -190,6 +235,7 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
     mainWindow = null;
+    rendererReady = false;
   });
 
   // Keep the renderer inside the app; open external links in the browser.
@@ -212,14 +258,22 @@ const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+  app.on("second-instance", (_event, argv, workingDirectory) => {
+    const opened = projectPathFromArgv(argv, workingDirectory || process.cwd());
+    if (opened) announceProject(opened);
+    else focusWindow();
+  });
+
+  // macOS delivers Finder double-clicks here, sometimes before `whenReady`.
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    announceProject(projectPathFromArgv([filePath]));
   });
 
   app.whenReady().then(() => {
     if (process.platform === "win32") app.setAppUserModelId("com.acidmade.app");
+    const initialProject = projectPathFromArgv(process.argv.slice(1), process.cwd());
+    if (initialProject) pendingProjectPath = initialProject;
     registerProjectIpc();
     startRuntime();
     createWindow();

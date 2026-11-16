@@ -2,6 +2,15 @@ appId: com.acidmade.app
 productName: AcidMade
 copyright: Copyright © 2026 LLAStudio
 
+# Double-clicking a .acm opens it in AcidMade. Windows and Linux register the
+# extension from this block; macOS gets a CFBundleDocumentTypes entry.
+fileAssociations:
+  - ext: acm
+    name: AcidMade Project
+    description: AcidMade project
+    mimeType: application/x-acidmade-project
+    role: Editor
+
 directories:
   output: release
   buildResources: build

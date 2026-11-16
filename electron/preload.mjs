@@ -14,6 +14,14 @@ contextBridge.exposeInMainWorld("acidmade", {
     list: () => ipcRenderer.invoke("acidmade:projects:list"),
     create: (input) => ipcRenderer.invoke("acidmade:projects:create", input),
     openDialog: () => ipcRenderer.invoke("acidmade:projects:open-dialog"),
+    openPath: (projectPath) => ipcRenderer.invoke("acidmade:projects:open-path", projectPath),
+    takePending: () => ipcRenderer.invoke("acidmade:projects:take-pending"),
+    markReady: () => ipcRenderer.invoke("acidmade:projects:renderer-ready"),
+    onOpenFile: (callback) => {
+      const listener = (_event, projectPath) => callback(projectPath);
+      ipcRenderer.on("acidmade:projects:open-file", listener);
+      return () => ipcRenderer.removeListener("acidmade:projects:open-file", listener);
+    },
     reveal: (projectPath) => ipcRenderer.invoke("acidmade:projects:reveal", projectPath),
     tree: (projectPath) => ipcRenderer.invoke("acidmade:projects:tree", projectPath),
     readFile: (projectPath, relative) =>

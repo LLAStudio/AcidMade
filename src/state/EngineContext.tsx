@@ -45,7 +45,15 @@ import type {
 import { nowStamp, uid } from "../lib/utils";
 import { clearWorkspace, loadWorkspace, saveWorkspace } from "../lib/persistence";
 import { loadLauncher, saveLauncher } from "../lib/launcher";
-import { createProjectOnDisk, listProjects } from "../lib/projects";
+import {
+  createProjectOnDisk,
+  isDiskBacked,
+  listProjects,
+  markProjectBridgeReady,
+  onProjectFileOpen,
+  openProjectByPath,
+  takePendingProject,
+} from "../lib/projects";
 import { tabIdForFile } from "../lib/tabs";
 import {
   connectRunStream,
@@ -416,15 +424,22 @@ function reducer(state: EngineState, action: Action): EngineState {
         project: current ?? action.projects[0],
       };
     }
-    case "launch-project":
+    case "launch-project": {
+      // Projects opened from outside the store folder are not in the list yet,
+      // so add them before switching to them.
+      const known = state.projects.some(
+        (entry) => entry.id === action.project.id || entry.path === action.project.path,
+      );
       return {
         ...state,
+        projects: known ? state.projects : [...state.projects, action.project],
         project: action.project,
         launcherOpen: false,
         mode: "viewport",
         dockOpen: true,
         dockTab: "output",
       };
+    }
     case "create-project": {
       const entry = makeLog({
         time: nowStamp(),
@@ -1291,6 +1306,40 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     }),
     [abortActiveRun, busy, canPause, canStop, loadProjectList, launchRun, probeRuntime, togglePause],
   );
+
+  // Opening a .acm from the OS (double-click, command line, second instance)
+  // goes straight to the editor instead of leaving the user in the launcher.
+  const osActions = useRef(actions);
+  osActions.current = actions;
+
+  useEffect(() => {
+    if (!isDiskBacked()) return;
+    let disposed = false;
+
+    const openFromOs = async (target: string) => {
+      try {
+        const opened = await openProjectByPath(target);
+        if (disposed) return;
+        osActions.current.launchProject(opened);
+        osActions.current.pushLog("AcidEngine", "info", "opened from the OS · " + target);
+      } catch (error: unknown) {
+        if (disposed) return;
+        osActions.current.pushLog("AcidEngine", "warn", "could not open " + target + " · " + String(error));
+      }
+    };
+
+    const unsubscribe = onProjectFileOpen((target) => void openFromOs(target));
+    void (async () => {
+      const pending = await takePendingProject();
+      markProjectBridgeReady();
+      if (pending) await openFromOs(pending);
+    })();
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
 
   const value = useMemo<EngineContextValue>(
     () => ({ ...state, ...actions, state, canStop, canPause }),
