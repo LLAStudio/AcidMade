@@ -117,6 +117,7 @@ live under `Documents/AcidMade` (override with `ACIDMADE_PROJECTS_DIR`).
   (a file, or a folder with everything inside it) and delete, with starter content
   for `.acid`, `.json`, `.prompt` and `.md`. Dragging a resource onto a folder
   header moves it there; dropping it on `root` moves it back to the project root.
+  Right-clicking one opens a menu with Open, Rename, Duplicate and Delete.
 
 Older folder projects (`acidmade.json` in a directory) still open. The container
 is a plain zip with stored entries, so an `.acm` can be inspected or repaired

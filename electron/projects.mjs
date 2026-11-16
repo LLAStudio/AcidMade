@@ -76,6 +76,16 @@ function starterContent(filePath) {
   return "";
 }
 
+function copyName(relative) {
+  const slash = relative.lastIndexOf("/");
+  const directory = slash >= 0 ? relative.slice(0, slash + 1) : "";
+  const base = slash >= 0 ? relative.slice(slash + 1) : relative;
+  const dot = base.lastIndexOf(".");
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const extension = dot > 0 ? base.slice(dot) : "";
+  return directory + stem + " copy" + extension;
+}
+
 function resolveInside(root, relative) {
   const base = path.resolve(root);
   const target = path.resolve(base, relative);
@@ -617,6 +627,48 @@ export function createProjectStore({ rootDir, seed = true }) {
     return { path: target, entries: renamed.length };
   }
 
+  async function duplicateEntry(projectPath, relative) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved);
+    const source = normalizeEntryPath(relative);
+    const target = copyName(source);
+
+    if (stats.isDirectory()) {
+      const from = resolveInside(resolved, source);
+      const to = resolveInside(resolved, target);
+      if (await fileExists(to)) throw new Error("already exists: " + target);
+      await fs.cp(from, to, { recursive: true });
+      return { path: target };
+    }
+
+    const archive = await readArchive(resolved);
+    const entries = [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data }));
+    const selected = entries.filter(
+      (entry) =>
+        entry.path === source ||
+        entry.path === source + "/" ||
+        entry.path.startsWith(source + "/"),
+    );
+    if (selected.length === 0) throw new Error("not found: " + source);
+    if (entries.some((entry) => entry.path === target || entry.path.startsWith(target + "/"))) {
+      throw new Error("already exists: " + target);
+    }
+
+    const copies = selected.map((entry) => ({
+      path: target + entry.path.slice(source.length),
+      data: Buffer.from(entry.data),
+    }));
+    const next = [...entries, ...copies];
+    const manifestEntry = next.find((entry) => entry.path === MANIFEST);
+    if (manifestEntry) {
+      const manifest = parseManifest(String(manifestEntry.data)) ?? {};
+      manifest.updatedAt = new Date().toISOString();
+      manifestEntry.data = JSON.stringify(manifest, null, 2) + "\n";
+    }
+    await fs.writeFile(resolved, writeAcm(next));
+    return { path: target, entries: copies.length };
+  }
+
   async function deleteEntry(projectPath, relative) {
     const resolved = path.resolve(String(projectPath));
     const stats = await fs.stat(resolved);
@@ -660,6 +712,7 @@ export function createProjectStore({ rootDir, seed = true }) {
     writeFile,
     createEntry,
     renameEntry,
+    duplicateEntry,
     deleteEntry,
   };
 }

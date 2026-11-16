@@ -55,6 +55,7 @@ interface ProjectsBridge {
     kind: "file" | "dir",
   ): Promise<{ path: string; kind: "file" | "dir" }>;
   renameEntry(projectPath: string, from: string, to: string): Promise<{ path: string }>;
+  duplicateEntry(projectPath: string, relative: string): Promise<{ path: string; entries?: number }>;
   deleteEntry(projectPath: string, relative: string): Promise<{ path: string; removed?: number }>;
 }
 
@@ -238,6 +239,14 @@ export async function renameProjectEntry(
 ): Promise<{ path: string }> {
   const { api, path } = requireDisk(project);
   return api.renameEntry(path, from, to);
+}
+
+export async function duplicateProjectEntry(
+  project: Project,
+  relative: string,
+): Promise<{ path: string; entries?: number }> {
+  const { api, path } = requireDisk(project);
+  return api.duplicateEntry(path, relative);
 }
 
 export async function deleteProjectEntry(

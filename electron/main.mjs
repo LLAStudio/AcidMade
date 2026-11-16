@@ -72,6 +72,10 @@ function registerProjectIpc() {
     store().renameEntry(payload?.projectPath, payload?.from, payload?.to),
   );
 
+  ipcMain.handle("acidmade:projects:duplicate-entry", (_event, payload) =>
+    store().duplicateEntry(payload?.projectPath, payload?.relative),
+  );
+
   ipcMain.handle("acidmade:projects:delete-entry", (_event, payload) =>
     store().deleteEntry(payload?.projectPath, payload?.relative),
   );

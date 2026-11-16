@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import {
   Boxes,
   ChevronRight,
+  Copy,
   FileCode2,
   FileJson,
   FilePlus2,
@@ -30,6 +31,7 @@ import { PROJECT_TEMPLATES, type Project } from "../data/projects";
 import {
   createProjectEntry,
   deleteProjectEntry,
+  duplicateProjectEntry,
   isDiskBacked,
   listProjects,
   openProjectFile,
@@ -84,6 +86,12 @@ export function ProjectManager() {
   const [entryBusy, setEntryBusy] = useState(false);
   const [dragPath, setDragPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    path: string;
+    kind: "file" | "dir";
+  } | null>(null);
   const [fileData, setFileData] = useState<ProjectFileContent | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -285,6 +293,53 @@ export function ProjectManager() {
       setDeleteTarget(null);
     } catch (error: unknown) {
       flash("Delete failed: " + String(error));
+    } finally {
+      setEntryBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu]);
+
+  const openEntry = (entry: { path: string; kind: "file" | "dir" }) => {
+    setContextMenu(null);
+    if (entry.kind === "dir") {
+      const folder = entry.path.split("/")[0];
+      setOpenFolders((current) => ({ ...current, [folder]: true }));
+      return;
+    }
+    if (CODE_FILES.some((item) => item.path === entry.path)) {
+      enter(selected, entry.path);
+      return;
+    }
+    flash("res://" + entry.path + " is read in the inspector; it has no editor tab");
+  };
+
+  const duplicateEntry = async (entry: { path: string; kind: "file" | "dir" }) => {
+    setContextMenu(null);
+    if (!selected || entryBusy) return;
+    setEntryBusy(true);
+    try {
+      const result = await duplicateProjectEntry(selected, entry.path);
+      flash("Duplicated to res://" + result.path);
+      pushLog("AcidEngine", "ok", "duplicated res://" + entry.path + " to res://" + result.path);
+      await refreshTree();
+      refreshProjects();
+    } catch (error: unknown) {
+      flash("Duplicate failed: " + String(error));
     } finally {
       setEntryBusy(false);
     }
@@ -682,6 +737,16 @@ export function ProjectManager() {
                               type="button"
                               draggable={disk}
                               onClick={() => setSelectedEntry({ path: file.path, kind: "dir" })}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                setSelectedEntry({ path: file.path, kind: "dir" });
+                                setContextMenu({
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                  path: file.path,
+                                  kind: "dir",
+                                });
+                              }}
                               onDragStart={(event) => {
                                 event.dataTransfer.effectAllowed = "move";
                                 event.dataTransfer.setData("text/plain", file.path);
@@ -723,6 +788,17 @@ export function ProjectManager() {
                               setDropTarget(null);
                             }}
                             onClick={() => void selectFile(file)}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              setSelectedEntry({ path: file.path, kind: "file" });
+                              void selectFile(file);
+                              setContextMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                path: file.path,
+                                kind: "file",
+                              });
+                            }}
                             onDoubleClick={() => {
                               if (CODE_FILES.some((entry) => entry.path === file.path)) {
                                 enter(selected, file.path);
@@ -963,6 +1039,72 @@ export function ProjectManager() {
               </div>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {contextMenu ? (
+        <div
+          role="menu"
+          aria-label={"Actions for res://" + contextMenu.path}
+          className="fixed z-[90] w-[188px] border border-line bg-panel py-1 shadow-[0_16px_40px_rgba(0,0,0,0.65)]"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 196),
+            top: Math.min(contextMenu.y, window.innerHeight - 164),
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div className="truncate px-2 pb-1 font-mono text-[8px] text-zinc-600">
+            res://{contextMenu.path}
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => openEntry(contextMenu)}
+            className="flex h-[24px] w-full items-center gap-2 px-2 text-left text-[10px] text-zinc-300 hover:bg-white/[0.05]"
+          >
+            <SquareArrowOutUpRight size={10} className="text-zinc-500" />
+            Open
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!disk}
+            onClick={() => {
+              const target = { path: contextMenu.path, kind: contextMenu.kind };
+              setContextMenu(null);
+              setEntryDialog({ mode: "rename", value: target.path });
+            }}
+            className="flex h-[24px] w-full items-center gap-2 px-2 text-left text-[10px] text-zinc-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:text-zinc-700 disabled:hover:bg-transparent"
+          >
+            <Pencil size={9} className="text-zinc-500" />
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!disk}
+            onClick={() => void duplicateEntry(contextMenu)}
+            className="flex h-[24px] w-full items-center gap-2 px-2 text-left text-[10px] text-zinc-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:text-zinc-700 disabled:hover:bg-transparent"
+          >
+            <Copy size={9} className="text-zinc-500" />
+            Duplicate
+          </button>
+          <div className="my-1 h-px bg-line" />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!disk}
+            onClick={() => {
+              const target = { path: contextMenu.path, kind: contextMenu.kind };
+              setContextMenu(null);
+              setDeleteTarget(target);
+            }}
+            className="flex h-[24px] w-full items-center gap-2 px-2 text-left text-[10px] text-danger hover:bg-danger/[0.08] disabled:cursor-not-allowed disabled:text-zinc-700 disabled:hover:bg-transparent"
+          >
+            <Trash2 size={9} />
+            Delete
+          </button>
         </div>
       ) : null}
 

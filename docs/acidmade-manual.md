@@ -138,6 +138,9 @@ working.
   folder row) to move it there; dropping on the `root` header moves it back to
   the project root. A folder cannot be dropped inside itself, and an existing
   target name is refused instead of overwritten.
+- **Right-click** a resource for **Open**, **Rename**, **Duplicate** and
+  **Delete**. Duplicate writes `<name> copy<ext>`, or `<folder> copy` with
+  everything inside it; an existing name is refused.
 
 ### 3.3 Resource browser
 

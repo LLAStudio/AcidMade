@@ -42,6 +42,9 @@ by a container on disk:
 - **Drag and drop** a resource onto a folder header or an empty folder row to move
   it there; dropping on the `root` header moves it back to the project root. A
   folder cannot be dropped inside its own subtree.
+- **Right-click** a resource for Open, Rename, Duplicate and Delete. Duplicate
+  writes a copy named `<name> copy<ext>`, or `<folder> copy` with everything
+  inside it.
 
 All of these rewrite the archive through the same store, so the manifest
 timestamp and the container's checksums stay consistent. In the browser preview
