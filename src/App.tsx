@@ -15,6 +15,7 @@ import { AiPanel } from "./components/AiPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { ProjectManager } from "./components/ProjectManager";
 import { ResizeHandle } from "./components/ResizeHandle";
+import { FirstRunLanguages } from "./components/LanguageOnboarding";
 import { EngineProvider, useEngine } from "./state/EngineContext";
 import { clamp } from "./lib/utils";
 
@@ -112,6 +113,7 @@ export default function App() {
   return (
     <EngineProvider>
       <EngineShell />
+      <FirstRunLanguages />
     </EngineProvider>
   );
 }

@@ -19,6 +19,7 @@ import {
   Rocket,
   Save,
   Search,
+  Settings2,
   Sparkles,
   SquareArrowOutUpRight,
   TerminalSquare,
@@ -44,6 +45,7 @@ import {
   type ProjectFileInfo,
 } from "../lib/projects";
 import { cx } from "../lib/utils";
+import { SettingsModal } from "./SettingsModal";
 
 function FileGlyph({ language }: { language: string }) {
   if (language === "json") return <FileJson size={11} className="text-[#38BDF8]/75" />;
@@ -71,6 +73,7 @@ export function ProjectManager() {
   const disk = isDiskBacked();
 
   const [root, setRoot] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [selectedId, setSelectedId] = useState(project.id);
@@ -479,6 +482,15 @@ export function ProjectManager() {
         </button>
         <button
           type="button"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Settings"
+          title="Settings"
+          className="grid h-[26px] w-[26px] shrink-0 place-items-center border border-line bg-panel text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+        >
+          <Settings2 size={12} />
+        </button>
+        <button
+          type="button"
           onClick={() => enter(selected)}
           className="flex h-[26px] items-center gap-1.5 border border-acid/40 bg-acid/[0.1] px-2.5 text-[10.5px] font-medium text-acid transition-colors hover:border-acid/70 hover:bg-acid/[0.16]"
         >
@@ -486,6 +498,8 @@ export function ProjectManager() {
           Open editor
         </button>
       </header>
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-[214px] shrink-0 flex-col border-r border-line bg-panel sm:w-[248px] xl:w-[286px]">

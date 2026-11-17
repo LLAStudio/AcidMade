@@ -31,6 +31,7 @@ import { NODE_CATALOG } from "../data/nodeCatalog";
 import { countSceneNodes, findSceneNode } from "../data/scene";
 import { cx } from "../lib/utils";
 import type { EngineMode } from "../types";
+import { SettingsModal } from "./SettingsModal";
 
 const WORKSPACES: { id: EngineMode; label: string; icon: LucideIcon; key: string }[] = [
   { id: "viewport", label: "Viewport", icon: Boxes, key: "1" },
@@ -196,6 +197,7 @@ export function EngineBar() {
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const barRef = useRef<HTMLDivElement | null>(null);
   const busy = run.status === "building" || run.status === "deploying";
@@ -335,6 +337,7 @@ export function EngineBar() {
         },
         { label: "Engine Documentation", icon: Info, action: () => pushLog("AcidEngine", "info", "docs · res://docs/acidmade-engine.md") },
         { label: "Scene Format · acid/1.0", icon: Layers, action: () => pushLog("AcidEngine", "info", "scene schema → res://acid.config.json") },
+        { label: "Settings", icon: Settings2, action: () => setSettingsOpen(true) },
         { label: "About AcidMade", icon: FlaskConical, action: () => setAboutOpen(true) },
       ],
     },
@@ -533,6 +536,8 @@ export function EngineBar() {
           </div>
         </div>
       ) : null}
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {aboutOpen ? (
         <div
