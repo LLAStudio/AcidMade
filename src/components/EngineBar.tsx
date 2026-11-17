@@ -27,11 +27,12 @@ import {
 } from "lucide-react";
 import { useEngine } from "../state/EngineContext";
 import { downloadDocumentation } from "../lib/docs";
+import { LANGUAGES, loadLanguageSelection } from "../lib/languages";
 import { NODE_CATALOG } from "../data/nodeCatalog";
 import { countSceneNodes, findSceneNode } from "../data/scene";
 import { cx } from "../lib/utils";
+import { APP_VERSION } from "../lib/version";
 import type { EngineMode } from "../types";
-import { SettingsModal } from "./SettingsModal";
 
 const WORKSPACES: { id: EngineMode; label: string; icon: LucideIcon; key: string }[] = [
   { id: "viewport", label: "Viewport", icon: Boxes, key: "1" },
@@ -182,6 +183,7 @@ export function EngineBar() {
     setNodeModalOpen,
     setPalette,
     setAiOpen,
+    setSettings,
     aiOpen,
     setRightTab,
     selectNode,
@@ -197,12 +199,26 @@ export function EngineBar() {
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const barRef = useRef<HTMLDivElement | null>(null);
   const busy = run.status === "building" || run.status === "deploying";
   const running = run.status === "running" || busy;
   const selectedNode = findSceneNode(tree, selectedNodeId);
+  const preferredLanguages = LANGUAGES.filter((language) =>
+    (loadLanguageSelection() ?? []).includes(language.id),
+  );
+
+  useEffect(() => {
+    if (!aboutOpen && !resetOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAboutOpen(false);
+        setResetOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [aboutOpen, resetOpen]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -241,11 +257,14 @@ export function EngineBar() {
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPalette(true);
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        pushLog("AcidEngine", "ok", "workspace saved · acidmade.workspace.v1");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setPalette, startBuild, stopRun, togglePause]);
+  }, [pushLog, setPalette, startBuild, stopRun, togglePause]);
 
   const menus: MenuDef[] = [
     {
@@ -260,7 +279,11 @@ export function EngineBar() {
             else pushLog("AcidEngine", "warn", "selected node has no script attached");
           },
         },
-        { label: "Save Scene", shortcut: "Ctrl+S", action: () => pushLog("AcidEngine", "ok", "saved res://scenes/MainApp.acid") },
+        {
+          label: "Save Workspace",
+          shortcut: "Ctrl+S",
+          action: () => pushLog("AcidEngine", "ok", "workspace saved · acidmade.workspace.v1"),
+        },
         { separator: true, label: "sep", action: () => undefined },
         { label: "Select Root", icon: Boxes, action: () => selectNode("main-app") },
         { label: "Close Tabs", icon: X, action: () => pushLog("AcidEngine", "info", "scene tabs retained · dock session only") },
@@ -337,7 +360,7 @@ export function EngineBar() {
         },
         { label: "Engine Documentation", icon: Info, action: () => pushLog("AcidEngine", "info", "docs · res://docs/acidmade-engine.md") },
         { label: "Scene Format · acid/1.0", icon: Layers, action: () => pushLog("AcidEngine", "info", "scene schema → res://acid.config.json") },
-        { label: "Settings", icon: Settings2, action: () => setSettingsOpen(true) },
+        { label: "Settings", icon: Settings2, shortcut: "Ctrl+,", action: () => setSettings(true) },
         { label: "About AcidMade", icon: FlaskConical, action: () => setAboutOpen(true) },
       ],
     },
@@ -537,19 +560,22 @@ export function EngineBar() {
         </div>
       ) : null}
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-
       {aboutOpen ? (
         <div
           className="fixed inset-0 z-[75] grid place-items-center bg-black/65 p-6"
           onMouseDown={() => setAboutOpen(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="about-title"
             className="w-[340px] border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="flex h-8 items-center justify-between border-b border-line px-2.5">
-              <span className="text-[11px] font-semibold text-zinc-200">About AcidMade</span>
+              <span id="about-title" className="text-[11px] font-semibold text-zinc-200">
+                About AcidMade
+              </span>
               <button
                 type="button"
                 onClick={() => setAboutOpen(false)}
@@ -566,7 +592,9 @@ export function EngineBar() {
                 </span>
                 <div>
                   <div className="text-[12px] font-semibold text-zinc-100">AcidMade</div>
-                  <div className="font-mono text-[9px] text-zinc-500">v2.0.1.stable · engine build 2262</div>
+                  <div className="font-mono text-[9px] text-zinc-500">
+                    v{APP_VERSION} · scene format acid/1.0
+                  </div>
                 </div>
               </div>
               <p className="text-[10.5px] leading-relaxed text-zinc-500">
@@ -584,6 +612,12 @@ export function EngineBar() {
                 <span className="truncate text-zinc-400">{project.slug}</span>
                 <span>nodes</span>
                 <span className="text-zinc-400">{countSceneNodes(tree)}</span>
+                <span>languages</span>
+                <span className="truncate text-zinc-400">
+                  {preferredLanguages.length > 0
+                    ? preferredLanguages.map((language) => language.label).join(", ")
+                    : "not selected"}
+                </span>
                 {NODE_CATALOG.map((group) => (
                   <span key={group.id} className="col-span-2 mt-1 text-zinc-700">
                     {group.label} · {group.classes.length} classes

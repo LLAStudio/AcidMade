@@ -104,6 +104,16 @@ project contains.
 - **Open in editor** — opens the selected project, or jumps straight to a
   specific resource in the script workspace.
 
+### Languages
+
+On first launch AcidMade asks which languages you plan to use for agents and
+code — TypeScript, JavaScript, Python, Rust and Go, multi-select, at least one.
+The choice is stored on this device (`acidmade.languages.v1`), never inside a
+project, and Acid AI receives it as a preference when drafting code or agent
+resources. Change it any time from the gear in the project manager,
+**Help → Settings**, or `Ctrl`/`Cmd`+`,`. The same dialog resets the resized
+panel layout, which is remembered per device in `acidmade.layout.v1`.
+
 A project is one **`.acm` file**: a container holding `acidmade.json` (the
 manifest) plus every resource — scenes, scripts, prompts and config. Projects
 live under `Documents/AcidMade` (override with `ACIDMADE_PROJECTS_DIR`).
@@ -151,7 +161,7 @@ Return to the manager at any time from **Project → Projects & Files**.
 - **Command palette** — `⌘K` / `Ctrl+K` for everything above.
 
 Keyboard: `F5` run, `F6` pause/resume agents, `F7` stop, `Q`/`W`/`E` viewport
-tools.
+tools, `Ctrl`/`Cmd`+`P` file search and `Ctrl`/`Cmd`+`,` settings.
 
 ## Powering the AI panel
 
@@ -237,8 +247,11 @@ scripts/            dev launcher, icon and PDF generation
 - **Tools** — scoped filesystem writes, esbuild transforms, `tsc --noEmit`
   validation, signal helpers, gzip packaging.
 - **Persistence** — `acidmade.workspace.v1` stores the tree, overrides, tabs,
-  mode, selection and expanded state. Malformed snapshots fall back to defaults.
-  `Project → Reset Project to Defaults` clears it.
+  mode, selection, dock state, viewport device/zoom and expanded state.
+  `acidmade.languages.v1` holds the language preference and
+  `acidmade.layout.v1` the resized panel sizes. Malformed snapshots fall back to
+  defaults; `Project → Reset Project to Defaults` clears the workspace, and
+  Settings resets the layout.
 
 ## Commands
 

@@ -1,4 +1,5 @@
 import type { DiffFile, LogLevel, NodeStatus, Problem } from "../types";
+import { APP_VERSION } from "../lib/version";
 
 export interface SimulationStep {
   at: number;
@@ -43,7 +44,8 @@ export const BUILD_STEPS: SimulationStep[] = [
     at: 60,
     agent: "AcidEngine",
     level: "muted",
-    message: "AcidMade Engine v2.0.1.stable · scene runtime 2.0.1 · target desktop",
+    message:
+      "AcidMade Engine v" + APP_VERSION + ".stable · scene runtime " + APP_VERSION + " · target desktop",
     progress: 1,
   },
   {

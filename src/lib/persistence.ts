@@ -5,11 +5,14 @@ import {
   flattenScene,
 } from "../data/scene";
 import type {
+  Device,
+  DockTab,
   EngineMode,
   NodeKind,
   NodeOverrides,
   OverrideValue,
   SceneIconKey,
+  RightTab,
   SceneNode,
   SignalDefinition,
 } from "../types";
@@ -36,6 +39,9 @@ const NODE_ICONS = new Set<SceneIconKey>([
   "data",
 ]);
 const ENGINE_MODES = new Set<EngineMode>(["viewport", "script", "signals", "agents"]);
+const DOCK_TABS = new Set<DockTab>(["output", "stream", "debugger", "build", "terminal"]);
+const DEVICES = new Set<Device>(["desktop", "mobile"]);
+const RIGHT_TABS = new Set<RightTab>(["inspector", "node"]);
 
 export interface WorkspaceSnapshot {
   tree: SceneNode;
@@ -45,6 +51,11 @@ export interface WorkspaceSnapshot {
   mode: EngineMode;
   selectedNodeId: string;
   expanded: Record<string, boolean>;
+  dockOpen: boolean;
+  dockTab: DockTab;
+  device: Device;
+  zoom: number;
+  rightTab: RightTab;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -228,6 +239,18 @@ export function loadWorkspace(): WorkspaceSnapshot | null {
       mode,
       selectedNodeId,
       expanded: sanitizeExpanded(parsed.expanded, tree),
+      dockOpen: typeof parsed.dockOpen === "boolean" ? parsed.dockOpen : true,
+      dockTab: DOCK_TABS.has(parsed.dockTab as DockTab)
+        ? (parsed.dockTab as DockTab)
+        : "output",
+      device: DEVICES.has(parsed.device as Device) ? (parsed.device as Device) : "desktop",
+      zoom:
+        typeof parsed.zoom === "number" && Number.isFinite(parsed.zoom)
+          ? Math.min(1.5, Math.max(0.5, parsed.zoom))
+          : 1,
+      rightTab: RIGHT_TABS.has(parsed.rightTab as RightTab)
+        ? (parsed.rightTab as RightTab)
+        : "inspector",
     };
   } catch {
     return null;

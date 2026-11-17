@@ -146,6 +146,20 @@ working.
   **Delete**. Duplicate writes `<name> copy<ext>`, or `<folder> copy` with
   everything inside it; an existing name is refused.
 
+### 3.2.2 Language preferences
+
+Before the project manager appears for the first time, AcidMade asks which
+languages you plan to use for agents and code. TypeScript, JavaScript, Python,
+Rust and Go are offered; select at least one and press **Continue**.
+
+The selection is a device preference stored under `acidmade.languages.v1`; it is
+not written into any project. Change it later from the gear in the project
+manager, **Help → Settings** in the editor, or `Ctrl`/`Cmd`+`,`. Acid AI receives
+the selected languages as a preference when it drafts code or agent resources.
+
+The Settings dialog also resets the resizable panel layout. Panel sizes are
+stored separately in `acidmade.layout.v1` and restored on the next launch.
+
 ### 3.3 Resource browser
 
 The middle column lists every resource grouped by folder:
@@ -581,22 +595,28 @@ build, not a public product build.
 | `F7` | Stop execution |
 | `Ctrl`/`Cmd` + `K` | Command palette |
 | `Q` / `W` / `E` | Select, move, resize tool |
-| `Ctrl`/`Cmd` + `S` | Save scene |
+| `Ctrl`/`Cmd` + `S` | Save the workspace snapshot |
 | `Ctrl`/`Cmd` + `P` | Focus file search |
+| `Ctrl`/`Cmd` + `,` | Open Settings |
 
-The command palette lists navigation, node creation, run control, dock toggles
-and documentation actions, and filters as you type.
+In the project manager, `/` focuses the project search field and `n` opens the
+new-project dialog; `Escape` closes an open dialog.
+
+The command palette lists navigation, node creation, run control, dock toggles,
+**Projects & Files**, **Open Settings** and documentation actions, and filters as
+you type.
 
 ## 16. Persistence
 
-Two independent localStorage snapshots back the editor.
+Four independent localStorage snapshots back the editor and its preferences.
 
 ### 16.1 Workspace snapshot
 
 Key: `acidmade.workspace.v1`.
 
 Stored: scene tree, overrides, closed tab ids, active file id, workspace mode,
-selected node id, expanded nodes.
+selected node id, expanded nodes, output dock state and tab, viewport device and
+zoom, and the active right-hand tab.
 
 Validation on load:
 
@@ -613,12 +633,31 @@ Key: `acidmade.launcher.v1`.
 Stored: created projects and the last opened project id. Only user-created
 projects are persisted; the built-in three are always present.
 
-### 16.3 Reset
+### 16.3 Language preference
+
+Key: `acidmade.languages.v1`.
+
+Stored: the ordered list of selected language ids. Loaded on first launch to
+decide whether the onboarding screen is needed, and passed to Acid AI as a
+preference. Editing it in Settings writes the same key; an unknown id is
+discarded and an empty selection falls back to onboarding.
+
+### 16.4 Layout snapshot
+
+Key: `acidmade.layout.v1`.
+
+Stored: left and right dock widths, bottom dock height and scene panel height.
+Values are clamped to their usable ranges on load, so a corrupted snapshot
+cannot hide a panel. **Settings → Workspace → Reset layout** clears it and
+restores the defaults immediately.
+
+### 16.5 Reset
 
 **Project → Reset Project to Defaults** restores the built-in scene tree, clears
 every override, restores default tabs, resets mode and selection, and clears the
 workspace snapshot. It is disabled while a build or deploy is running and while
-a run is active.
+a run is active. Language preferences and panel sizes are kept; reset the layout
+from Settings.
 
 ## 17. Configuration reference
 

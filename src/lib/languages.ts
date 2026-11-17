@@ -1,6 +1,7 @@
 export interface LanguageOption {
   id: string;
   label: string;
+  short: string;
   detail: string;
 }
 
@@ -10,11 +11,11 @@ export interface LanguageOption {
  * code in, and stays on this device.
  */
 export const LANGUAGES: LanguageOption[] = [
-  { id: "typescript", label: "TypeScript", detail: "agent scripts · .agent.ts" },
-  { id: "javascript", label: "JavaScript", detail: "agents and tooling" },
-  { id: "python", label: "Python", detail: "scripts and services" },
-  { id: "rust", label: "Rust", detail: "native tools" },
-  { id: "go", label: "Go", detail: "services and CLIs" },
+  { id: "typescript", label: "TypeScript", short: "TS", detail: "agent scripts · .agent.ts" },
+  { id: "javascript", label: "JavaScript", short: "JS", detail: "agents and tooling" },
+  { id: "python", label: "Python", short: "PY", detail: "scripts and services" },
+  { id: "rust", label: "Rust", short: "RS", detail: "native tools" },
+  { id: "go", label: "Go", short: "GO", detail: "services and CLIs" },
 ];
 
 const STORAGE_KEY = "acidmade.languages.v1";

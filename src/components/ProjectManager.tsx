@@ -12,6 +12,7 @@ import {
   FolderSearch,
   GitBranch,
   HardDrive,
+  Languages,
   Layers,
   Pencil,
   Plus,
@@ -29,6 +30,7 @@ import {
 import { useEngine } from "../state/EngineContext";
 import { CODE_FILES } from "../data/resources";
 import { PROJECT_TEMPLATES, type Project } from "../data/projects";
+import { LANGUAGES, loadLanguageSelection } from "../lib/languages";
 import {
   createProjectEntry,
   deleteProjectEntry,
@@ -45,7 +47,6 @@ import {
   type ProjectFileInfo,
 } from "../lib/projects";
 import { cx } from "../lib/utils";
-import { SettingsModal } from "./SettingsModal";
 
 function FileGlyph({ language }: { language: string }) {
   if (language === "json") return <FileJson size={11} className="text-[#38BDF8]/75" />;
@@ -68,12 +69,13 @@ export function ProjectManager() {
     openFile,
     refreshProjects,
     pushLog,
+    settingsOpen,
+    setSettings,
   } = useEngine();
 
   const disk = isDiskBacked();
 
   const [root, setRoot] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [selectedId, setSelectedId] = useState(project.id);
@@ -104,8 +106,15 @@ export function ProjectManager() {
   const [draftTemplate, setDraftTemplate] = useState(PROJECT_TEMPLATES[0].id);
   const [busy, setBusy] = useState(false);
   const noteTimer = useRef<number | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   const selected = projects.find((entry) => entry.id === selectedId) ?? projects[0] ?? project;
+
+  // Re-read after Settings closes so the header chips reflect a new selection.
+  const preferredLanguages = useMemo(() => {
+    const ids = loadLanguageSelection() ?? [];
+    return LANGUAGES.filter((language) => ids.includes(language.id));
+  }, [settingsOpen]);
 
   const flash = useCallback((message: string) => {
     setNote(message);
@@ -302,6 +311,34 @@ export function ProjectManager() {
   };
 
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable;
+
+      if (event.key === "Escape") {
+        if (entryDialog) setEntryDialog(null);
+        else if (deleteTarget) setDeleteTarget(null);
+        else if (creating) setCreating(false);
+        return;
+      }
+      if (typing || creating || entryDialog || deleteTarget || settingsOpen) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      } else if (event.key.toLowerCase() === "n" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        setCreating(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [creating, deleteTarget, entryDialog, settingsOpen]);
+
+  useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
     const onKey = (event: KeyboardEvent) => {
@@ -445,9 +482,12 @@ export function ProjectManager() {
         <div className="ml-4 flex h-[26px] min-w-0 max-w-[360px] flex-1 items-center gap-1.5 border border-line bg-panel px-2">
           <Search size={11} className="shrink-0 text-zinc-600" />
           <input
+            ref={searchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search projects, branches, environments"
+            aria-label="Search projects"
+            title="Search projects  ( / )"
             spellCheck={false}
             className="h-full min-w-0 flex-1 bg-transparent font-mono text-[10.5px] text-zinc-300 outline-none placeholder:text-zinc-600"
           />
@@ -475,6 +515,7 @@ export function ProjectManager() {
         <button
           type="button"
           onClick={() => setCreating(true)}
+          title="New project  ( n )"
           className="flex h-[26px] items-center gap-1.5 border border-line bg-panel px-2 text-[10.5px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
         >
           <Plus size={11} />
@@ -482,9 +523,28 @@ export function ProjectManager() {
         </button>
         <button
           type="button"
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => setSettings(true)}
+          title={
+            preferredLanguages.length > 0
+              ? "Languages · " +
+                preferredLanguages.map((language) => language.label).join(", ") +
+                " · click to change"
+              : "Choose the languages you plan to use"
+          }
+          className="hidden h-[26px] shrink-0 items-center gap-1.5 border border-line bg-panel px-2 text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-100 xl:flex"
+        >
+          <Languages size={11} className="text-acid/60" />
+          <span className="font-mono text-[9px] tracking-[0.04em]">
+            {preferredLanguages.length > 0
+              ? preferredLanguages.map((language) => language.short).join(" · ")
+              : "Languages"}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSettings(true)}
           aria-label="Settings"
-          title="Settings"
+          title="Settings  (Ctrl+,)"
           className="grid h-[26px] w-[26px] shrink-0 place-items-center border border-line bg-panel text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-100"
         >
           <Settings2 size={12} />
@@ -498,8 +558,6 @@ export function ProjectManager() {
           Open editor
         </button>
       </header>
-
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-[214px] shrink-0 flex-col border-r border-line bg-panel sm:w-[248px] xl:w-[286px]">
@@ -943,7 +1001,11 @@ export function ProjectManager() {
       <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-line bg-shell px-2 font-mono text-[8.5px] text-zinc-600">
         <span className="text-acid/70">● {disk ? "disk" : "preview"}</span>
         <span className="truncate">{root || "res:// (browser preview)"}</span>
-        {note ? <span className="truncate text-zinc-300">{note}</span> : null}
+        {note ? (
+          <span role="status" aria-live="polite" className="truncate text-zinc-300">
+            {note}
+          </span>
+        ) : null}
         <span className="ml-auto shrink-0">
           {projects.length} projects · {files.length} files
         </span>

@@ -10,6 +10,7 @@ import {
 import { useEngine } from "../state/EngineContext";
 import { countSceneNodes, scenePath } from "../data/scene";
 import { cx } from "../lib/utils";
+import { APP_VERSION } from "../lib/version";
 
 export function StatusBar() {
   const {
@@ -101,7 +102,7 @@ export function StatusBar() {
           className="flex items-center gap-1 text-zinc-700 hover:text-zinc-300"
         >
           <PanelBottom size={9} />
-          <span className="hidden 2xl:inline">2.0.1</span>
+          <span className="hidden 2xl:inline">{APP_VERSION}</span>
         </button>
       </span>
     </div>

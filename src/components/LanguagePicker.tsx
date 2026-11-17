@@ -5,13 +5,19 @@ import { cx } from "../lib/utils";
 export function LanguagePicker({
   selected,
   onToggle,
+  autoFocus = false,
 }: {
   selected: string[];
   onToggle: (id: string) => void;
+  autoFocus?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-      {LANGUAGES.map((language) => {
+    <div
+      role="group"
+      aria-label="Languages"
+      className="grid grid-cols-1 gap-1.5 sm:grid-cols-2"
+    >
+      {LANGUAGES.map((language, index) => {
         const active = selected.includes(language.id);
         return (
           <button
@@ -19,6 +25,7 @@ export function LanguagePicker({
             type="button"
             role="checkbox"
             aria-checked={active}
+            autoFocus={autoFocus && index === 0}
             onClick={() => onToggle(language.id)}
             className={cx(
               "flex items-start gap-2 border px-2.5 py-2 text-left transition-colors",

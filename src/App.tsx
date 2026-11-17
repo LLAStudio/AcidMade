@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EngineBar } from "./components/EngineBar";
 import { SceneDock } from "./components/SceneDock";
 import { FileSystemDock } from "./components/FileSystemDock";
@@ -16,17 +16,63 @@ import { CommandPalette } from "./components/CommandPalette";
 import { ProjectManager } from "./components/ProjectManager";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { FirstRunLanguages } from "./components/LanguageOnboarding";
+import { SettingsModal } from "./components/SettingsModal";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { EngineProvider, useEngine } from "./state/EngineContext";
+import { DEFAULT_LAYOUT, LAYOUT_RESET_EVENT, loadLayout, saveLayout } from "./lib/layout";
 import { clamp } from "./lib/utils";
 
 function EngineShell() {
-  const { mode, dockOpen, launcherOpen } = useEngine();
-  const [leftWidth, setLeftWidth] = useState(258);
-  const [rightWidth, setRightWidth] = useState(306);
-  const [dockHeight, setDockHeight] = useState(172);
-  const [sceneHeight, setSceneHeight] = useState(430);
+  const { mode, dockOpen, launcherOpen, settingsOpen, setSettings, project } = useEngine();
+  const [initialLayout] = useState(loadLayout);
+  const [leftWidth, setLeftWidth] = useState(initialLayout.leftWidth);
+  const [rightWidth, setRightWidth] = useState(initialLayout.rightWidth);
+  const [dockHeight, setDockHeight] = useState(initialLayout.dockHeight);
+  const [sceneHeight, setSceneHeight] = useState(initialLayout.sceneHeight);
 
-  if (launcherOpen) return <ProjectManager />;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      saveLayout({ leftWidth, rightWidth, dockHeight, sceneHeight });
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [dockHeight, leftWidth, rightWidth, sceneHeight]);
+
+  useEffect(() => {
+    const reset = () => {
+      setLeftWidth(DEFAULT_LAYOUT.leftWidth);
+      setRightWidth(DEFAULT_LAYOUT.rightWidth);
+      setDockHeight(DEFAULT_LAYOUT.dockHeight);
+      setSceneHeight(DEFAULT_LAYOUT.sceneHeight);
+    };
+    window.addEventListener(LAYOUT_RESET_EVENT, reset);
+    return () => window.removeEventListener(LAYOUT_RESET_EVENT, reset);
+  }, []);
+
+  useEffect(() => {
+    document.title = launcherOpen
+      ? "AcidMade — AI-Native Application Engine"
+      : project.name + " — AcidMade";
+  }, [launcherOpen, project.name]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+        event.preventDefault();
+        setSettings(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setSettings]);
+
+  if (launcherOpen) {
+    return (
+      <>
+        <ProjectManager />
+        <SettingsModal open={settingsOpen} onClose={() => setSettings(false)} />
+      </>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen select-none flex-col overflow-hidden bg-shell text-zinc-300">
@@ -105,15 +151,18 @@ function EngineShell() {
       <AddNodeModal />
       <AiPanel />
       <CommandPalette />
+      <SettingsModal open={settingsOpen} onClose={() => setSettings(false)} />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <EngineProvider>
-      <EngineShell />
-      <FirstRunLanguages />
-    </EngineProvider>
+    <ErrorBoundary>
+      <EngineProvider>
+        <EngineShell />
+        <FirstRunLanguages />
+      </EngineProvider>
+    </ErrorBoundary>
   );
 }

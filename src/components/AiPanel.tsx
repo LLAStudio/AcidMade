@@ -24,6 +24,7 @@ import { NODE_CATALOG } from "../data/nodeCatalog";
 import { defaultProps } from "../data/nodeProps";
 import { findSceneNode, flattenScene, scenePath } from "../data/scene";
 import { resourceById } from "../data/resources";
+import { LANGUAGES, loadLanguageSelection } from "../lib/languages";
 import {
   AI_PROVIDERS,
   askAcidAi,
@@ -401,10 +402,19 @@ export function AiPanel() {
     pushLog("AcidAI", "action", "chat request · " + meta.short.toLowerCase() + " · " + settings.model);
 
     try {
+      const preferred = loadLanguageSelection() ?? [];
+      const languageContext =
+        "Preferred languages: " +
+        (preferred.length > 0
+          ? preferred
+              .map((id) => LANGUAGES.find((language) => language.id === id)?.label ?? id)
+              .join(", ")
+          : "none selected") +
+        ". Prefer these languages when proposing code or agent resources.";
       const response = await askAcidAi(
         { ...settings, baseUrl: settings.baseUrl.trim(), model: settings.model.trim() },
         history,
-        context,
+        context + "\n" + languageContext,
         imageAttachments.map((item) => item.dataUrl as string),
       );
       let content = response.message;

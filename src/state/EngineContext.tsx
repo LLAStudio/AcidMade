@@ -43,6 +43,7 @@ import type {
   SceneNode,
 } from "../types";
 import { nowStamp, uid } from "../lib/utils";
+import { APP_VERSION } from "../lib/version";
 import { clearWorkspace, loadWorkspace, saveWorkspace } from "../lib/persistence";
 import { loadLauncher, saveLauncher } from "../lib/launcher";
 import {
@@ -107,6 +108,7 @@ export interface EngineState {
   paletteOpen: boolean;
   nodeModalOpen: boolean;
   aiOpen: boolean;
+  settingsOpen: boolean;
   rightTab: RightTab;
   activeFileId: string;
   closedTabIds: string[];
@@ -119,7 +121,8 @@ const INITIAL_LOGS: LogEntry[] = [
     agent: "AcidEngine",
     channel: "console",
     level: "muted",
-    message: "AcidMade Engine v2.0.1.stable · scene runtime online · project northwind-analytics",
+    message:
+      "AcidMade Engine v" + APP_VERSION + ".stable · scene runtime online · project northwind-analytics",
   },
   {
     id: uid("log"),
@@ -166,6 +169,7 @@ const INITIAL_STATE: EngineState = {
   paletteOpen: false,
   nodeModalOpen: false,
   aiOpen: false,
+  settingsOpen: false,
   rightTab: "inspector",
   activeFileId: INITIAL_FILE_ID,
   closedTabIds: [],
@@ -188,6 +192,11 @@ function hydrateEngineState(_initial: EngineState): EngineState {
     overrides: saved.overrides,
     activeFileId: saved.activeFileId,
     closedTabIds: saved.closedTabIds,
+    dockOpen: saved.dockOpen,
+    dockTab: saved.dockTab,
+    device: saved.device,
+    zoom: saved.zoom,
+    rightTab: saved.rightTab,
   };
 }
 
@@ -219,6 +228,7 @@ type Action =
   | { type: "set-palette"; open: boolean }
   | { type: "set-node-modal"; open: boolean }
   | { type: "set-ai"; open: boolean }
+  | { type: "set-settings"; open: boolean }
   | { type: "set-right-tab"; tab: RightTab }
   | { type: "set-active-file"; id: string }
   | { type: "open-file"; path: string }
@@ -436,8 +446,9 @@ function reducer(state: EngineState, action: Action): EngineState {
         project: action.project,
         launcherOpen: false,
         mode: "viewport",
-        dockOpen: true,
-        dockTab: "output",
+        // Keep the dock state the user left behind; a run opens it explicitly.
+        dockOpen: state.dockOpen,
+        dockTab: state.dockTab,
       };
     }
     case "create-project": {
@@ -613,6 +624,8 @@ function reducer(state: EngineState, action: Action): EngineState {
       return { ...state, nodeModalOpen: action.open };
     case "set-ai":
       return { ...state, aiOpen: action.open };
+    case "set-settings":
+      return { ...state, settingsOpen: action.open };
     case "set-right-tab":
       return { ...state, rightTab: action.tab };
     case "set-active-file":
@@ -816,6 +829,7 @@ interface EngineActions {
   setPalette: (open: boolean) => void;
   setNodeModalOpen: (open: boolean) => void;
   setAiOpen: (open: boolean) => void;
+  setSettings: (open: boolean) => void;
   setRightTab: (tab: RightTab) => void;
   setActiveFile: (id: string) => void;
   openFile: (path: string) => void;
@@ -859,15 +873,25 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       mode: state.mode,
       selectedNodeId: state.selectedNodeId,
       expanded: state.expanded,
+      dockOpen: state.dockOpen,
+      dockTab: state.dockTab,
+      device: state.device,
+      zoom: state.zoom,
+      rightTab: state.rightTab,
     });
   }, [
     state.activeFileId,
     state.closedTabIds,
+    state.dockOpen,
+    state.dockTab,
+    state.device,
     state.expanded,
     state.mode,
     state.overrides,
+    state.rightTab,
     state.selectedNodeId,
     state.tree,
+    state.zoom,
   ]);
 
   useEffect(() => {
@@ -1280,6 +1304,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
       setPalette: (open) => dispatch({ type: "set-palette", open }),
       setNodeModalOpen: (open) => dispatch({ type: "set-node-modal", open }),
       setAiOpen: (open) => dispatch({ type: "set-ai", open }),
+      setSettings: (open) => dispatch({ type: "set-settings", open }),
       setRightTab: (tab) => dispatch({ type: "set-right-tab", tab }),
       setActiveFile: (id) => dispatch({ type: "set-active-file", id }),
       openFile: (path) => dispatch({ type: "open-file", path }),

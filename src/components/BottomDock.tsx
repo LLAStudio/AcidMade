@@ -17,6 +17,7 @@ import { useEngine } from "../state/EngineContext";
 import { agentTone } from "./nodeMeta";
 import type { DockTab, LogEntry, LogLevel, RunStatus } from "../types";
 import { cx } from "../lib/utils";
+import { APP_VERSION } from "../lib/version";
 
 const TABS: { id: DockTab; label: string; icon: LucideIcon }[] = [
   { id: "output", label: "Output", icon: TerminalIcon },
@@ -252,9 +253,11 @@ export function BottomDock() {
             {state.dockTab === "output" ? (
               <div className="select-text">
                 <div className="flex h-[16px] items-center gap-2 border-b border-line-soft/60 px-2 font-mono text-[8.5px] text-zinc-700">
-                  <span className="text-zinc-500">AcidMade Engine v2.0.1.stable.official</span>
+                  <span className="text-zinc-500">
+                    AcidMade Engine v{APP_VERSION}.stable.official
+                  </span>
                   <span>·</span>
-                  <span>scene runtime 2.0.1</span>
+                  <span>scene runtime {APP_VERSION}</span>
                   <span className="ml-auto">https://acidmade.local</span>
                 </div>
                 {state.logs.length === 0 ? (
@@ -445,7 +448,7 @@ export function BottomDock() {
                 </button>
               )}
               <span className="text-zinc-800">|</span>
-              <span>acidmade 2.0.1</span>
+              <span>acidmade {APP_VERSION}</span>
             </span>
           </div>
         </>

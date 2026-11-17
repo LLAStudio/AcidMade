@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronRight,
   FileCode2,
@@ -25,6 +25,23 @@ export function FileSystemDock() {
   const { activeFileId, openFile } = useEngine();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+        const input = searchRef.current;
+        // The dock is hidden on narrow windows; focusing a hidden input would
+        // silently swallow the shortcut.
+        if (!input || input.offsetParent === null) return;
+        event.preventDefault();
+        input.focus();
+        input.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const folders = useMemo(() => {
     const groups = new Map<string, CodeFile[]>();
@@ -62,9 +79,12 @@ export function FileSystemDock() {
       <div className="flex h-[25px] shrink-0 items-center gap-1 border-b border-line-soft px-1.5">
         <Search size={10} className="shrink-0 text-zinc-600" />
         <input
+          ref={searchRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search files"
+          aria-label="Search files"
+          title="Search files  (Ctrl/Cmd+P)"
           spellCheck={false}
           className="h-[20px] min-w-0 flex-1 bg-transparent px-0.5 font-mono text-[10.5px] text-zinc-300 outline-none placeholder:text-zinc-600"
         />

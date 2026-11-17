@@ -14,13 +14,23 @@ export function LanguageOnboarding({ onDone }: { onDone: (ids: string[]) => void
 
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/80 p-6">
-      <div className="w-[440px] max-w-full border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="language-onboarding-title"
+        className="w-[440px] max-w-full border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]"
+      >
         <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
           <span className="grid h-7 w-7 place-items-center rounded-[2px] bg-acid">
             <Languages size={14} className="text-[#0a0c04]" />
           </span>
           <div>
-            <div className="text-[12px] font-semibold text-zinc-100">Choose your languages</div>
+            <div
+              id="language-onboarding-title"
+              className="text-[12px] font-semibold text-zinc-100"
+            >
+              Choose your languages
+            </div>
             <div className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-zinc-600">
               first launch · workspace setup
             </div>
@@ -34,6 +44,7 @@ export function LanguageOnboarding({ onDone }: { onDone: (ids: string[]) => void
           </p>
           <LanguagePicker
             selected={selected}
+            autoFocus
             onToggle={(id) => setSelected((current) => toggle(current, id))}
           />
           <p className="font-mono text-[9px] text-zinc-600">

@@ -1,4 +1,5 @@
 import type { CodeFile } from "../types";
+import { APP_VERSION } from "../lib/version";
 
 const file = (
   id: string,
@@ -288,7 +289,7 @@ export default defineEndpoint({
     `{
   "project": "northwind-analytics",
   "runtime": {
-    "engine": "2.0.1",
+    "engine": "${APP_VERSION}",
     "sceneFormat": "acid/1.0",
     "agentPlanner": "local-reference",
     "workspace": ".acidmade/runs"
