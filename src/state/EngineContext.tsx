@@ -835,7 +835,7 @@ interface EngineActions {
   openLauncher: () => void;
   launchProject: (project: Project) => void;
   createProject: (input: { name: string; template?: string }) => Promise<Project>;
-  refreshProjects: () => void;
+  refreshProjects: () => Promise<void>;
   addNode: (input: NewNodeInput) => void;
   renameNode: (nodeId: string, name: string) => void;
   startBuild: () => void;
@@ -1298,9 +1298,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "create-project", project });
         return project;
       },
-      refreshProjects: () => {
-        void loadProjectList();
-      },
+      refreshProjects: () => loadProjectList(),
       addNode: (input) => dispatch({ type: "add-node", input }),
       renameNode: (nodeId, name) => dispatch({ type: "rename-node", nodeId, name }),
       startBuild: () => {

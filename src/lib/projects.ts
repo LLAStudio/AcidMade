@@ -61,6 +61,9 @@ interface ProjectsBridge {
   renameEntry(projectPath: string, from: string, to: string): Promise<{ path: string }>;
   duplicateEntry(projectPath: string, relative: string): Promise<{ path: string; entries?: number }>;
   deleteEntry(projectPath: string, relative: string): Promise<{ path: string; removed?: number }>;
+  renameProject(projectPath: string, name: string): Promise<DiskProject>;
+  duplicateProject(projectPath: string): Promise<DiskProject>;
+  deleteProject(projectPath: string): Promise<{ path: string }>;
 }
 
 interface DesktopBridge {
@@ -192,6 +195,24 @@ export function onProjectFileOpen(callback: (projectPath: string) => void): () =
   const api = projectsBridge();
   if (!api) return () => {};
   return api.onOpenFile(callback);
+}
+
+export async function renameProject(project: Project, name: string): Promise<Project> {
+  const api = projectsBridge();
+  if (!api || !project.path) throw new Error("renaming a project requires the desktop app");
+  return toProject(await api.renameProject(project.path, name));
+}
+
+export async function duplicateProject(project: Project): Promise<Project> {
+  const api = projectsBridge();
+  if (!api || !project.path) throw new Error("duplicating a project requires the desktop app");
+  return toProject(await api.duplicateProject(project.path));
+}
+
+export async function deleteProject(project: Project): Promise<{ path: string }> {
+  const api = projectsBridge();
+  if (!api || !project.path) throw new Error("deleting a project requires the desktop app");
+  return api.deleteProject(project.path);
 }
 
 export async function revealProject(project: Project): Promise<boolean> {

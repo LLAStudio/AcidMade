@@ -103,6 +103,12 @@ project contains.
   preview.
 - **Open in editor** — opens the selected project, or jumps straight to a
   specific resource in the script workspace.
+- **Manage projects** — from the project header, rename a project (the `.acm`
+  moves to the new slug and its manifest is rewritten), duplicate it as an
+  independent archive, or delete it. Deletion asks for explicit confirmation and
+  removes the `.acm` and its `.bak`; at least one project must remain. These
+  operations go through IPC and are disabled in the browser preview. Legacy
+  folder projects are left untouched.
 
 ### Languages
 

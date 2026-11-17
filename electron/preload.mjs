@@ -36,5 +36,11 @@ contextBridge.exposeInMainWorld("acidmade", {
       ipcRenderer.invoke("acidmade:projects:duplicate-entry", { projectPath, relative }),
     deleteEntry: (projectPath, relative) =>
       ipcRenderer.invoke("acidmade:projects:delete-entry", { projectPath, relative }),
+    renameProject: (projectPath, name) =>
+      ipcRenderer.invoke("acidmade:projects:rename", { projectPath, name }),
+    duplicateProject: (projectPath) =>
+      ipcRenderer.invoke("acidmade:projects:duplicate", { projectPath }),
+    deleteProject: (projectPath) =>
+      ipcRenderer.invoke("acidmade:projects:delete", { projectPath }),
   },
 });

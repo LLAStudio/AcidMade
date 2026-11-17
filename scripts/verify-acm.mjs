@@ -164,5 +164,66 @@ assert.deepEqual(
 await fs.rm(backupPath, { recursive: true, force: true });
 ok("saves are atomic with a .bak", "previous archive preserved, failed save harmless");
 
+// 10. Project-level management: rename, duplicate and delete operate on the
+// archive itself, update the manifest, and never touch legacy folder projects.
+const originalPath = path.join(root, "orbital-console.acm");
+const renamed = await store.rename(originalPath, "Orbital Console v2");
+assert.equal(path.basename(renamed.path), "orbital-console-v2.acm", "rename moves the archive");
+assert.equal(renamed.name, "Orbital Console v2", "rename returns the new name");
+assert.equal(renamed.slug, "orbital-console-v2", "rename returns the new slug");
+assert.equal(
+  await fs.stat(originalPath).then(() => true).catch(() => false),
+  false,
+  "the old archive path is gone",
+);
+const renamedEntries = readAcm(await fs.readFile(renamed.path));
+const renamedManifest = JSON.parse(renamedEntries.get("acidmade.json").toString("utf8"));
+assert.equal(renamedManifest.slug, "orbital-console-v2", "the manifest slug follows the file");
+assert.equal(renamedManifest.name, "Orbital Console v2", "the manifest keeps the new name");
+assert.ok(renamedEntries.has("notes/atomic.md"), "rename preserves every resource");
+ok("rename moves the archive and updates its manifest", path.basename(renamed.path));
+
+const copy = await store.duplicate(renamed.path);
+assert.equal(copy.name, "Orbital Console v2 copy", "duplicate names the copy");
+assert.equal(copy.slug, "orbital-console-v2-copy", "duplicate sluguifies the copy name");
+assert.equal(path.basename(copy.path), "orbital-console-v2-copy.acm", "duplicate writes a new .acm");
+const copyEntries = readAcm(await fs.readFile(copy.path));
+const copyManifest = JSON.parse(copyEntries.get("acidmade.json").toString("utf8"));
+assert.equal(copyManifest.slug, copy.slug, "the copy manifest points at its own slug");
+assert.equal(copyManifest.name, copy.name, "the copy manifest has its own name");
+assert.ok(copyEntries.has("notes/atomic.md"), "duplicate copies every resource");
+const secondCopy = await store.duplicate(renamed.path);
+assert.notEqual(secondCopy.path, copy.path, "a second duplicate gets a unique path");
+ok("duplicate writes an independent archive", `${copy.slug}, ${secondCopy.slug}`);
+
+await store.writeFile(copy.path, "notes/extra.md", "copy only\n");
+assert.ok(
+  await fs.stat(copy.path + ".bak").then(() => true).catch(() => false),
+  "the copy has its own backup after a write",
+);
+await store.remove(copy.path);
+assert.equal(await fs.stat(copy.path).catch(() => null), null, "delete removes the archive");
+assert.equal(
+  await fs.stat(copy.path + ".bak").catch(() => null),
+  null,
+  "delete removes the backup copy too",
+);
+await store.remove(secondCopy.path);
+assert.equal((await store.list()).length, 3, "delete leaves the other projects intact");
+const remaining = (await store.list()).map((project) => project.slug);
+assert.ok(remaining.includes("orbital-console-v2"), "the renamed original remains");
+ok("delete removes only the selected archive", "renamed original and two seeded projects remain");
+
+const legacy = path.join(root, "legacy-project");
+await fs.mkdir(legacy);
+await fs.writeFile(
+  path.join(legacy, "acidmade.json"),
+  JSON.stringify({ format: "acm/1.0", name: "Legacy", slug: "legacy-project" }) + "\n",
+);
+await assert.rejects(() => store.rename(legacy, "Legacy renamed"), /only \.acm/);
+await assert.rejects(() => store.duplicate(legacy), /only \.acm/);
+await assert.rejects(() => store.remove(legacy), /only \.acm/);
+ok("legacy folders are protected from project operations", "rename, duplicate and delete reject a directory");
+
 await fs.rm(root, { recursive: true, force: true });
 console.log(JSON.stringify({ ok: true, checks: results }, null, 2));

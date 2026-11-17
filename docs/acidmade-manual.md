@@ -160,6 +160,26 @@ the selected languages as a preference when it drafts code or agent resources.
 The Settings dialog also resets the resizable panel layout. Panel sizes are
 stored separately in `acidmade.layout.v1` and restored on the next launch.
 
+### 3.2.3 Renaming, duplicating and deleting projects
+
+The project header exposes three project operations. They run in the Electron
+main process over IPC and rewrite the `.acm` container; the browser preview has
+no filesystem access, so the buttons stay disabled there. Legacy folder projects
+are readable but intentionally excluded from these operations.
+
+- **Rename** moves the archive to a slug derived from the new name, updates
+  `name`, `slug` and `updatedAt` in `acidmade.json`, and preserves every resource.
+  If the target slug is taken, a numeric suffix is added. The old filename is
+  removed and the project list selects the renamed project.
+- **Duplicate** writes a new independent archive beside the original, named
+  `<name> copy` (then `copy 2`, and so on), with its own slug, `createdAt` and
+  `updatedAt`. Both archives can be edited separately afterwards.
+- **Delete** permanently removes the archive and its `.bak` backup. The dialog
+  names the project and path and requires an explicit **Delete project** click;
+  nothing is removed until then. The last remaining project cannot be deleted.
+
+All three operations appear in the output log and refresh the project list.
+
 ### 3.3 Resource browser
 
 The middle column lists every resource grouped by folder:

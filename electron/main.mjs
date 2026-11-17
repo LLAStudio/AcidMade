@@ -105,6 +105,18 @@ function registerProjectIpc() {
   ipcMain.handle("acidmade:projects:delete-entry", (_event, payload) =>
     store().deleteEntry(payload?.projectPath, payload?.relative),
   );
+
+  ipcMain.handle("acidmade:projects:rename", (_event, payload) =>
+    store().rename(payload?.projectPath, payload?.name),
+  );
+
+  ipcMain.handle("acidmade:projects:duplicate", (_event, payload) =>
+    store().duplicate(payload?.projectPath),
+  );
+
+  ipcMain.handle("acidmade:projects:delete", (_event, payload) =>
+    store().remove(payload?.projectPath),
+  );
 }
 
 function startRuntime() {

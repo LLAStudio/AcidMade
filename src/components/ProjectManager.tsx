@@ -33,11 +33,14 @@ import { PROJECT_TEMPLATES, type Project } from "../data/projects";
 import { LANGUAGES, loadLanguageSelection } from "../lib/languages";
 import {
   createProjectEntry,
+  deleteProject as deleteProjectOnDisk,
   deleteProjectEntry,
+  duplicateProject as duplicateProjectOnDisk,
   duplicateProjectEntry,
   isDiskBacked,
   listProjects,
   openProjectFile,
+  renameProject as renameProjectOnDisk,
   projectFiles,
   readProjectFile,
   renameProjectEntry,
@@ -69,6 +72,7 @@ export function ProjectManager() {
     openFile,
     refreshProjects,
     pushLog,
+    setProject,
     settingsOpen,
     setSettings,
   } = useEngine();
@@ -102,6 +106,10 @@ export function ProjectManager() {
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [projectRename, setProjectRename] = useState<Project | null>(null);
+  const [projectRenameValue, setProjectRenameValue] = useState("");
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftTemplate, setDraftTemplate] = useState(PROJECT_TEMPLATES[0].id);
   const [busy, setBusy] = useState(false);
@@ -109,6 +117,9 @@ export function ProjectManager() {
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   const selected = projects.find((entry) => entry.id === selectedId) ?? projects[0] ?? project;
+  const manageable = Boolean(
+    disk && selected?.path && selected.path.toLowerCase().endsWith(".acm"),
+  );
 
   // Re-read after Settings closes so the header chips reflect a new selection.
   const preferredLanguages = useMemo(() => {
@@ -322,10 +333,22 @@ export function ProjectManager() {
       if (event.key === "Escape") {
         if (entryDialog) setEntryDialog(null);
         else if (deleteTarget) setDeleteTarget(null);
+        else if (projectRename) setProjectRename(null);
+        else if (projectToDelete) setProjectToDelete(null);
         else if (creating) setCreating(false);
         return;
       }
-      if (typing || creating || entryDialog || deleteTarget || settingsOpen) return;
+      if (
+        typing ||
+        creating ||
+        entryDialog ||
+        deleteTarget ||
+        projectRename ||
+        projectToDelete ||
+        settingsOpen
+      ) {
+        return;
+      }
       if (event.key === "/") {
         event.preventDefault();
         searchRef.current?.focus();
@@ -336,7 +359,7 @@ export function ProjectManager() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [creating, deleteTarget, entryDialog, settingsOpen]);
+  }, [creating, deleteTarget, entryDialog, projectRename, projectToDelete, settingsOpen]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -460,11 +483,98 @@ export function ProjectManager() {
       setCreating(false);
       setDraftName("");
       flash("Created " + next.name + (disk ? " on disk" : " in the browser preview"));
-      refreshProjects();
+      void refreshProjects();
     } catch (error: unknown) {
       flash("Could not create project: " + String(error));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const requestRenameProject = (target: Project) => {
+    if (!disk || !target.path?.toLowerCase().endsWith(".acm")) {
+      flash("Renaming requires a .acm project file in the desktop app");
+      return;
+    }
+    setProjectRename(target);
+    setProjectRenameValue(target.name);
+  };
+
+  const submitRenameProject = async () => {
+    if (!projectRename || projectBusy) return;
+    const name = projectRenameValue.trim();
+    if (!name) return;
+    if (name === projectRename.name) {
+      setProjectRename(null);
+      return;
+    }
+
+    const previous = projectRename;
+    setProjectBusy(true);
+    try {
+      const next = await renameProjectOnDisk(previous, name);
+      await refreshProjects();
+      setSelectedId(next.id);
+      if (project.id === previous.id) setProject(next);
+      flash("Renamed " + previous.name + " to " + next.name);
+      pushLog("AcidEngine", "ok", "renamed project " + previous.slug + " to " + next.slug);
+      setProjectRename(null);
+    } catch (error: unknown) {
+      flash("Rename failed: " + String(error));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const duplicateProject = async (target: Project) => {
+    if (projectBusy) return;
+    if (!disk || !target.path?.toLowerCase().endsWith(".acm")) {
+      flash("Duplicating requires a .acm project file in the desktop app");
+      return;
+    }
+    setProjectBusy(true);
+    try {
+      const next = await duplicateProjectOnDisk(target);
+      await refreshProjects();
+      setSelectedId(next.id);
+      flash("Duplicated to " + next.name);
+      pushLog("AcidEngine", "ok", "duplicated project " + target.slug + " to " + next.slug);
+    } catch (error: unknown) {
+      flash("Duplicate failed: " + String(error));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const requestDeleteProject = (target: Project) => {
+    if (projects.length <= 1) {
+      flash("Keep at least one project before deleting this one");
+      return;
+    }
+    if (!disk || !target.path?.toLowerCase().endsWith(".acm")) {
+      flash("Deleting requires a .acm project file in the desktop app");
+      return;
+    }
+    setProjectToDelete(target);
+  };
+
+  const submitDeleteProject = async () => {
+    if (!projectToDelete || projectBusy) return;
+    const target = projectToDelete;
+    const fallback = projects.find((entry) => entry.id !== target.id) ?? null;
+    setProjectBusy(true);
+    try {
+      await deleteProjectOnDisk(target);
+      await refreshProjects();
+      if (selectedId === target.id) setSelectedId(fallback?.id ?? "");
+      if (project.id === target.id && fallback) setProject(fallback);
+      flash("Deleted " + target.name);
+      pushLog("AcidEngine", "warn", "deleted project " + target.slug);
+      setProjectToDelete(null);
+    } catch (error: unknown) {
+      flash("Delete failed: " + String(error));
+    } finally {
+      setProjectBusy(false);
     }
   };
 
@@ -655,6 +765,50 @@ export function ProjectManager() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => selected && requestRenameProject(selected)}
+                  disabled={!manageable || projectBusy}
+                  aria-label="Rename project"
+                  title={
+                    manageable
+                      ? "Rename project"
+                      : "Only .acm projects in the desktop app can be renamed"
+                  }
+                  className="grid h-[26px] w-[26px] place-items-center border border-line text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-line-soft disabled:text-zinc-800 disabled:hover:border-line-soft disabled:hover:text-zinc-800"
+                >
+                  <Pencil size={11} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selected && void duplicateProject(selected)}
+                  disabled={!manageable || projectBusy}
+                  aria-label="Duplicate project"
+                  title={
+                    manageable
+                      ? "Duplicate project"
+                      : "Only .acm projects in the desktop app can be duplicated"
+                  }
+                  className="grid h-[26px] w-[26px] place-items-center border border-line text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-line-soft disabled:text-zinc-800 disabled:hover:border-line-soft disabled:hover:text-zinc-800"
+                >
+                  <Copy size={11} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selected && requestDeleteProject(selected)}
+                  disabled={!manageable || projectBusy || projects.length <= 1}
+                  aria-label="Delete project"
+                  title={
+                    !manageable
+                      ? "Only .acm projects in the desktop app can be deleted"
+                      : projects.length <= 1
+                        ? "Keep at least one project"
+                        : "Delete project"
+                  }
+                  className="grid h-[26px] w-[26px] place-items-center border border-line text-zinc-500 transition-colors hover:border-danger/50 hover:text-danger disabled:cursor-not-allowed disabled:border-line-soft disabled:text-zinc-800 disabled:hover:border-line-soft disabled:hover:text-zinc-800"
+                >
+                  <Trash2 size={11} />
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -1311,6 +1465,140 @@ export function ProjectManager() {
                 >
                   <Trash2 size={10} />
                   {entryBusy ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {projectRename ? (
+        <div
+          className="fixed inset-0 z-[85] grid place-items-center bg-black/70 p-6"
+          onMouseDown={() => {
+            if (!projectBusy) setProjectRename(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-project-title"
+            className="w-[360px] max-w-full border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-8 items-center justify-between border-b border-line px-2.5">
+              <span id="rename-project-title" className="text-[11px] font-semibold text-zinc-200">
+                Rename project
+              </span>
+              <button
+                type="button"
+                onClick={() => setProjectRename(null)}
+                disabled={projectBusy}
+                aria-label="Close rename project dialog"
+                className="grid h-5 w-5 place-items-center text-zinc-500 hover:bg-elevated hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="space-y-2 p-3">
+              <label className="block">
+                <span className="label-caps text-zinc-500">Project name</span>
+                <input
+                  value={projectRenameValue}
+                  onChange={(event) => setProjectRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void submitRenameProject();
+                  }}
+                  autoFocus
+                  spellCheck={false}
+                  className="mt-1 h-[26px] w-full border border-line bg-void px-2 font-mono text-[10.5px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-acid/50"
+                />
+              </label>
+              <p className="text-[9px] leading-relaxed text-zinc-600">
+                The .acm file moves to the new slug and its manifest is updated. Resources and the
+                other project metadata are preserved.
+              </p>
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setProjectRename(null)}
+                  disabled={projectBusy}
+                  className="flex h-[27px] flex-1 items-center justify-center border border-line text-[9.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitRenameProject()}
+                  disabled={!projectRenameValue.trim() || projectBusy}
+                  className="flex h-[27px] flex-1 items-center justify-center gap-1 border border-acid/40 bg-acid/[0.1] text-[9.5px] font-medium text-acid hover:bg-acid/[0.16] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-zinc-700"
+                >
+                  <Pencil size={10} />
+                  {projectBusy ? "Renaming…" : "Rename"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {projectToDelete ? (
+        <div
+          className="fixed inset-0 z-[85] grid place-items-center bg-black/70 p-6"
+          onMouseDown={() => {
+            if (!projectBusy) setProjectToDelete(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-project-title"
+            className="w-[360px] max-w-full border border-line bg-panel shadow-[0_24px_60px_rgba(0,0,0,0.7)]"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex h-8 items-center justify-between border-b border-line px-2.5">
+              <span id="delete-project-title" className="text-[11px] font-semibold text-zinc-200">
+                Delete project
+              </span>
+              <button
+                type="button"
+                onClick={() => setProjectToDelete(null)}
+                disabled={projectBusy}
+                aria-label="Close delete project dialog"
+                className="grid h-5 w-5 place-items-center text-zinc-500 hover:bg-elevated hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="space-y-2 p-3">
+              <div className="flex items-start gap-2 border border-danger/25 bg-danger/[0.05] p-2">
+                <Trash2 size={12} className="mt-[1px] shrink-0 text-danger/80" />
+                <p className="text-[10px] leading-relaxed text-zinc-400">
+                  <span className="font-medium text-zinc-200">{projectToDelete.name}</span> will be
+                  permanently deleted, including its .acm archive and .bak copy. This cannot be
+                  undone.
+                </p>
+              </div>
+              <p className="break-all font-mono text-[9px] text-zinc-500">
+                {projectToDelete.path}
+              </p>
+              <div className="flex items-center gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setProjectToDelete(null)}
+                  disabled={projectBusy}
+                  className="flex h-[27px] flex-1 items-center justify-center border border-line text-[9.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitDeleteProject()}
+                  disabled={projectBusy}
+                  className="flex h-[27px] flex-1 items-center justify-center gap-1 border border-danger/40 bg-danger/[0.1] text-[9.5px] font-medium text-danger hover:bg-danger/[0.16] disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-zinc-700"
+                >
+                  <Trash2 size={10} />
+                  {projectBusy ? "Deleting…" : "Delete project"}
                 </button>
               </div>
             </div>

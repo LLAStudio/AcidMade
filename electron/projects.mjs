@@ -87,6 +87,14 @@ function copyName(relative) {
   return directory + stem + " copy" + extension;
 }
 
+function withManifest(entries, manifest) {
+  const encoded = Buffer.from(JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  const index = entries.findIndex((entry) => entry.path === MANIFEST);
+  if (index >= 0) entries[index] = { path: MANIFEST, data: encoded };
+  else entries.unshift({ path: MANIFEST, data: encoded });
+  return entries;
+}
+
 function resolveInside(root, relative) {
   const base = path.resolve(root);
   const target = path.resolve(base, relative);
@@ -520,6 +528,97 @@ export function createProjectStore({ rootDir, seed = true }) {
     return recordFromManifest(manifest, resolved, count, stats);
   }
 
+  async function uniqueProjectPath(directory, base, ignore) {
+    let target = path.join(directory, base + EXTENSION);
+    if (ignore && path.resolve(target) === path.resolve(ignore)) return target;
+    let suffix = 2;
+    while (await fileExists(target)) {
+      target = path.join(directory, base + "-" + suffix + EXTENSION);
+      suffix += 1;
+    }
+    return target;
+  }
+
+  async function rename(projectPath, name) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved).catch(() => null);
+    if (!stats || !stats.isFile() || !resolved.toLowerCase().endsWith(EXTENSION)) {
+      throw new Error("only .acm project files can be renamed");
+    }
+    const clean = String(name ?? "").trim().slice(0, 120);
+    if (!clean) throw new Error("project name is required");
+
+    const target = await uniqueProjectPath(path.dirname(resolved), slugify(clean), resolved);
+    const archive = await readArchive(resolved);
+    const manifest =
+      parseManifest(acmText(archive, MANIFEST) ?? "") ?? manifestDefaults(clean);
+    const updated = {
+      ...manifest,
+      name: clean,
+      slug: path.basename(target, EXTENSION),
+      updatedAt: new Date().toISOString(),
+    };
+    const entries = withManifest(
+      [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data })),
+      updated,
+    );
+
+    // Move first, then rewrite the manifest at the new path. A failed write
+    // leaves the archive readable under its new name rather than half-renamed.
+    if (target !== resolved) await fs.rename(resolved, target);
+    await writeAcmFile(target, writeAcm(entries));
+    return recordFromManifest(updated, target, entries.length, await fs.stat(target));
+  }
+
+  async function duplicate(projectPath) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved).catch(() => null);
+    if (!stats || !stats.isFile() || !resolved.toLowerCase().endsWith(EXTENSION)) {
+      throw new Error("only .acm project files can be duplicated");
+    }
+
+    const archive = await readArchive(resolved);
+    const manifest = parseManifest(acmText(archive, MANIFEST) ?? "");
+    const source = recordFromManifest(manifest, resolved, archive.size, stats);
+
+    let copyName = source.name + " copy";
+    let target = path.join(path.dirname(resolved), slugify(copyName) + EXTENSION);
+    let suffix = 2;
+    while (await fileExists(target)) {
+      copyName = source.name + " copy " + suffix;
+      target = path.join(path.dirname(resolved), slugify(copyName) + EXTENSION);
+      suffix += 1;
+    }
+
+    const now = new Date().toISOString();
+    const updated = {
+      ...(manifest ?? manifestDefaults(copyName)),
+      name: copyName,
+      slug: path.basename(target, EXTENSION),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const entries = withManifest(
+      [...archive.entries()].map(([entryPath, data]) => ({ path: entryPath, data })),
+      updated,
+    );
+    await writeAcmFile(target, writeAcm(entries));
+    return recordFromManifest(updated, target, entries.length, await fs.stat(target));
+  }
+
+  async function remove(projectPath) {
+    const resolved = path.resolve(String(projectPath));
+    const stats = await fs.stat(resolved).catch(() => null);
+    if (!stats || !stats.isFile() || !resolved.toLowerCase().endsWith(EXTENSION)) {
+      throw new Error("only .acm project files can be deleted");
+    }
+    await fs.unlink(resolved);
+    // The atomic writer leaves a .bak beside the archive; deleting the project
+    // should not leave a readable copy behind.
+    await fs.rm(resolved + ".bak", { force: true });
+    return { path: resolved };
+  }
+
   async function tree(projectPath) {
     const resolved = path.resolve(String(projectPath));
     const stats = await fs.stat(resolved).catch(() => null);
@@ -769,5 +868,8 @@ export function createProjectStore({ rootDir, seed = true }) {
     renameEntry,
     duplicateEntry,
     deleteEntry,
+    rename,
+    duplicate,
+    remove,
   };
 }
