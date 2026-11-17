@@ -109,6 +109,9 @@ project contains.
   removes the `.acm` and its `.bak`; at least one project must remain. These
   operations go through IPC and are disabled in the browser preview. Legacy
   folder projects are left untouched.
+- **Release notice** — when a newer stable release is published, a slim banner
+  in the launcher links to it and can be hidden for that version. The check runs
+  in the background with a timeout, so startup keeps working offline.
 
 ### Languages
 

@@ -10,6 +10,9 @@ declare global {
         chrome: string;
         node: string;
       };
+      updates?: {
+        latest(): Promise<{ tag?: string; url?: string } | null>;
+      };
     };
   }
 }

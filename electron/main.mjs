@@ -225,6 +225,35 @@ function announceProject(filePath) {
   pendingProjectPath = filePath;
 }
 
+function registerUpdateIpc() {
+  ipcMain.handle("acidmade:updates:latest", async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const response = await fetch(
+        "https://api.github.com/repos/LLAStudio/AcidMade/releases/latest",
+        {
+          signal: controller.signal,
+          headers: {
+            accept: "application/vnd.github+json",
+            "user-agent": "AcidMade-update-check",
+          },
+        },
+      );
+      if (!response.ok) return null;
+      const payload = await response.json();
+      if (typeof payload?.tag_name !== "string" || typeof payload?.html_url !== "string") {
+        return null;
+      }
+      return { tag: payload.tag_name, url: payload.html_url };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -287,6 +316,7 @@ if (!singleInstance) {
     const initialProject = projectPathFromArgv(process.argv.slice(1), process.cwd());
     if (initialProject) pendingProjectPath = initialProject;
     registerProjectIpc();
+    registerUpdateIpc();
     startRuntime();
     createWindow();
 

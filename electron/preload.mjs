@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("acidmade", {
     chrome: process.versions.chrome,
     node: process.versions.node,
   },
+  updates: {
+    latest: () => ipcRenderer.invoke("acidmade:updates:latest"),
+  },
   projects: {
     list: () => ipcRenderer.invoke("acidmade:projects:list"),
     create: (input) => ipcRenderer.invoke("acidmade:projects:create", input),

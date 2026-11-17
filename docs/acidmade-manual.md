@@ -180,6 +180,19 @@ are readable but intentionally excluded from these operations.
 
 All three operations appear in the output log and refresh the project list.
 
+### 3.2.4 Release notifications
+
+When a newer stable release is published on GitHub, the project manager shows a
+slim banner under its header: the available version, the version you are running,
+a **View release** link, and a close button. Closing it hides that release until
+a newer one appears; the choice is stored under `acidmade.update-dismissed.v1`.
+
+The lookup asks the GitHub releases API from the Electron main process, with a
+six-second timeout and a six-hour cache (`acidmade.update-check.v1`). In the
+browser preview it is attempted directly and any CORS or network failure is
+ignored. Nothing is awaited before the launcher renders, so starting offline or
+with the API unavailable never blocks the app or shows an error.
+
 ### 3.3 Resource browser
 
 The middle column lists every resource grouped by folder:
@@ -628,7 +641,7 @@ you type.
 
 ## 16. Persistence
 
-Four independent localStorage snapshots back the editor and its preferences.
+Independent localStorage snapshots back the editor, its preferences and the update notice.
 
 ### 16.1 Workspace snapshot
 
@@ -676,7 +689,16 @@ Values are clamped to their usable ranges on load, so a corrupted snapshot
 cannot hide a panel. **Settings → Workspace → Reset layout** clears it and
 restores the defaults immediately.
 
-### 16.5 Reset
+### 16.5 Update notification
+
+Keys: `acidmade.update-dismissed.v1` and `acidmade.update-check.v1`.
+
+Stored: the version whose release banner was hidden, and the last successful
+release lookup with its timestamp. The cache avoids asking GitHub on every
+launcher visit; a dismissed version stays hidden until a newer stable release is
+published. Invalid or unreadable values are ignored.
+
+### 16.6 Reset
 
 **Project → Reset Project to Defaults** restores the built-in scene tree, clears
 every override, restores default tabs, resets mode and selection, and clears the

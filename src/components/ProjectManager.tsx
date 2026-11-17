@@ -27,6 +27,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { UpdateNotice } from "./UpdateNotice";
 import { useEngine } from "../state/EngineContext";
 import { CODE_FILES } from "../data/resources";
 import { PROJECT_TEMPLATES, type Project } from "../data/projects";
@@ -668,6 +669,8 @@ export function ProjectManager() {
           Open editor
         </button>
       </header>
+
+      <UpdateNotice />
 
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-[214px] shrink-0 flex-col border-r border-line bg-panel sm:w-[248px] xl:w-[286px]">
