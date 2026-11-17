@@ -595,7 +595,7 @@ build, not a public product build.
 | `F7` | Stop execution |
 | `Ctrl`/`Cmd` + `K` | Command palette |
 | `Q` / `W` / `E` | Select, move, resize tool |
-| `Ctrl`/`Cmd` + `S` | Save the workspace snapshot |
+| `Ctrl`/`Cmd` + `S` | Write the workspace snapshot immediately |
 | `Ctrl`/`Cmd` + `P` | Focus file search |
 | `Ctrl`/`Cmd` + `,` | Open Settings |
 
@@ -617,6 +617,11 @@ Key: `acidmade.workspace.v1`.
 Stored: scene tree, overrides, closed tab ids, active file id, workspace mode,
 selected node id, expanded nodes, output dock state and tab, viewport device and
 zoom, and the active right-hand tab.
+
+The snapshot is written automatically whenever one of those values changes.
+`Ctrl`/`Cmd`+`S` (or **Scene → Save Workspace**) writes the current snapshot
+immediately, even when nothing changed since the last automatic write, and logs
+the save in the output dock.
 
 Validation on load:
 

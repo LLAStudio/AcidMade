@@ -44,7 +44,12 @@ import type {
 } from "../types";
 import { nowStamp, uid } from "../lib/utils";
 import { APP_VERSION } from "../lib/version";
-import { clearWorkspace, loadWorkspace, saveWorkspace } from "../lib/persistence";
+import {
+  clearWorkspace,
+  loadWorkspace,
+  saveWorkspace,
+  type WorkspaceSnapshot,
+} from "../lib/persistence";
 import { loadLauncher, saveLauncher } from "../lib/launcher";
 import {
   createProjectOnDisk,
@@ -321,6 +326,23 @@ function clearRunning(nodeStatuses: Record<string, NodeStatus>): Record<string, 
     if (next[id] === "running") next[id] = "idle";
   });
   return next;
+}
+
+function workspaceSnapshot(state: EngineState): WorkspaceSnapshot {
+  return {
+    tree: state.tree,
+    overrides: state.overrides,
+    closedTabIds: state.closedTabIds,
+    activeFileId: state.activeFileId,
+    mode: state.mode,
+    selectedNodeId: state.selectedNodeId,
+    expanded: state.expanded,
+    dockOpen: state.dockOpen,
+    dockTab: state.dockTab,
+    device: state.device,
+    zoom: state.zoom,
+    rightTab: state.rightTab,
+  };
 }
 
 function reducer(state: EngineState, action: Action): EngineState {
@@ -836,6 +858,7 @@ interface EngineActions {
   closeTab: (id: string) => void;
   openTab: (id: string) => void;
   resetWorkspace: () => void;
+  saveWorkspaceNow: () => void;
   pushLog: (agent: string, level: LogLevel, message: string) => void;
   refreshRuntime: () => void;
 }
@@ -859,26 +882,15 @@ export function EngineProvider({ children }: { children: ReactNode }) {
   const attemptRef = useRef(0);
   const launchLock = useRef(false);
   const projectRef = useRef(state.project);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     projectRef.current = state.project;
   }, [state.project]);
 
   useEffect(() => {
-    saveWorkspace({
-      tree: state.tree,
-      overrides: state.overrides,
-      closedTabIds: state.closedTabIds,
-      activeFileId: state.activeFileId,
-      mode: state.mode,
-      selectedNodeId: state.selectedNodeId,
-      expanded: state.expanded,
-      dockOpen: state.dockOpen,
-      dockTab: state.dockTab,
-      device: state.device,
-      zoom: state.zoom,
-      rightTab: state.rightTab,
-    });
+    saveWorkspace(workspaceSnapshot(state));
   }, [
     state.activeFileId,
     state.closedTabIds,
@@ -1228,6 +1240,21 @@ export function EngineProvider({ children }: { children: ReactNode }) {
     busy || state.run.status === "running" || state.run.status === "deployed";
   const canPause = Boolean(state.activeRunId) && (busy || state.run.status === "running");
 
+  // Same snapshot as the auto-save effect, written immediately on Ctrl/Cmd+S.
+  const saveWorkspaceNow = useCallback(() => {
+    saveWorkspace(workspaceSnapshot(stateRef.current));
+    dispatch({
+      type: "log",
+      entry: makeLog({
+        time: nowStamp(),
+        agent: "AcidEngine",
+        channel: "console",
+        level: "ok",
+        message: "workspace saved on demand · acidmade.workspace.v1",
+      }),
+    });
+  }, []);
+
   const actions = useMemo<EngineActions>(
     () => ({
       setMode: (mode) => dispatch({ type: "set-mode", mode }),
@@ -1314,6 +1341,7 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         clearWorkspace();
         dispatch({ type: "reset-workspace" });
       },
+      saveWorkspaceNow,
       pushLog: (agent, level, message) =>
         dispatch({
           type: "log",
@@ -1329,7 +1357,17 @@ export function EngineProvider({ children }: { children: ReactNode }) {
         void probeRuntime();
       },
     }),
-    [abortActiveRun, busy, canPause, canStop, loadProjectList, launchRun, probeRuntime, togglePause],
+    [
+      abortActiveRun,
+      busy,
+      canPause,
+      canStop,
+      loadProjectList,
+      launchRun,
+      probeRuntime,
+      saveWorkspaceNow,
+      togglePause,
+    ],
   );
 
   // Opening a .acm from the OS (double-click, command line, second instance)

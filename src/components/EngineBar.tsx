@@ -195,6 +195,7 @@ export function EngineBar() {
     tree,
     selectedNodeId,
     resetWorkspace,
+    saveWorkspaceNow,
   } = useEngine();
 
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -259,12 +260,12 @@ export function EngineBar() {
         setPalette(true);
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        pushLog("AcidEngine", "ok", "workspace saved · acidmade.workspace.v1");
+        saveWorkspaceNow();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pushLog, setPalette, startBuild, stopRun, togglePause]);
+  }, [saveWorkspaceNow, setPalette, startBuild, stopRun, togglePause]);
 
   const menus: MenuDef[] = [
     {
@@ -282,7 +283,7 @@ export function EngineBar() {
         {
           label: "Save Workspace",
           shortcut: "Ctrl+S",
-          action: () => pushLog("AcidEngine", "ok", "workspace saved · acidmade.workspace.v1"),
+          action: saveWorkspaceNow,
         },
         { separator: true, label: "sep", action: () => undefined },
         { label: "Select Root", icon: Boxes, action: () => selectNode("main-app") },

@@ -249,9 +249,10 @@ scripts/            dev launcher, icon and PDF generation
 - **Persistence** — `acidmade.workspace.v1` stores the tree, overrides, tabs,
   mode, selection, dock state, viewport device/zoom and expanded state.
   `acidmade.languages.v1` holds the language preference and
-  `acidmade.layout.v1` the resized panel sizes. Malformed snapshots fall back to
-  defaults; `Project → Reset Project to Defaults` clears the workspace, and
-  Settings resets the layout.
+  `acidmade.layout.v1` the resized panel sizes. Changes auto-save, and
+  `Ctrl`/`Cmd`+`S` writes the snapshot immediately. Malformed snapshots fall
+  back to defaults; `Project → Reset Project to Defaults` clears the workspace,
+  and Settings resets the layout.
 
 ## Commands
 
